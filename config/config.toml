@@ -1,0 +1,3 @@
+http_port = 10000
+https_port = 11443
+master_endpoints = ["localhost:8081"]
