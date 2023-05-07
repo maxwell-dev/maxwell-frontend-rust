@@ -95,9 +95,9 @@ impl RouteTable {
     match self.route_groups.entry(path.clone()) {
       DashEntry::Occupied(mut occupied) => {
         let route_group = occupied.get_mut();
-        let handler = route_group.next_endpoint();
-        if handler.is_some() {
-          handler
+        let endpoint = route_group.next_endpoint();
+        if endpoint.is_some() {
+          endpoint
         } else {
           occupied.remove();
           None

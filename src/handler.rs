@@ -7,16 +7,16 @@ use std::{
   },
 };
 
-use actix::{prelude::*, Actor, Addr};
+use actix::{prelude::*, Actor};
 use actix_web_actors::ws;
-use ahash::RandomState as AHasher;
-use dashmap::{mapref::entry::Entry as DashEntry, DashMap};
-use maxwell_client::prelude::ConnectionMgr;
+use ahash::{AHashMap as HashMap, RandomState as AHasher};
+use dashmap::DashMap;
 use maxwell_protocol::{self, SendError, *};
+use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
 use once_cell::sync::Lazy;
-use once_cell::sync::OnceCell;
 
 use crate::route_table::ROUTE_TABLE;
+use crate::topic_localizer::TopicLocalizer;
 
 static ID_SEED: AtomicU32 = AtomicU32::new(1);
 
@@ -24,15 +24,12 @@ fn next_id() -> u32 {
   ID_SEED.fetch_add(1, Ordering::Relaxed)
 }
 
-static ID_ADDRESS_MAP: OnceCell<IdAddressMap> = OnceCell::new();
-
 #[derive(Debug)]
 struct IdAddressMap(DashMap<u32, Recipient<ProtocolMsg>, AHasher>);
 
 impl IdAddressMap {
-  pub fn singleton() -> &'static Self {
-    ID_ADDRESS_MAP
-      .get_or_init(|| IdAddressMap(DashMap::with_capacity_and_hasher(1024, AHasher::default())))
+  pub fn new() -> Self {
+    IdAddressMap(DashMap::with_capacity_and_hasher(1024, AHasher::default()))
   }
 
   pub fn add(&self, id: u32, address: Recipient<ProtocolMsg>) {
@@ -52,13 +49,39 @@ impl IdAddressMap {
   }
 }
 
-pub static CONNECTION_MGR: Lazy<ConnectionMgr> = Lazy::new(|| ConnectionMgr::default());
+static ID_ADDRESS_MAP: Lazy<IdAddressMap> = Lazy::new(|| IdAddressMap::new());
 
-#[derive(Debug, Clone)]
+struct EventHandler;
+
+impl MaxwellEventHandler for EventHandler {
+  #[inline]
+  fn on_msg(&self, msg: ProtocolMsg) {
+    log::info!("@@@@@@{:?}", msg);
+    match msg {
+      ProtocolMsg::ReqRep(rep) => {
+        if let Some(address) = ID_ADDRESS_MAP.get(rep.conn0_ref) {
+          let _ = address.do_send(rep.into_enum());
+        }
+      }
+      ProtocolMsg::PullRep(rep) => {
+        if let Some(address) = ID_ADDRESS_MAP.get(rep.conn0_ref) {
+          let _ = address.do_send(rep.into_enum());
+        }
+      }
+      other => {
+        log::warn!("unexpected msg: {:?}", other);
+      }
+    }
+  }
+}
+
+static CONNECTION_POOL: Lazy<ConnectionPool<ConnectionLite<EventHandler>>> =
+  Lazy::new(|| ConnectionPool::new(PoolOptions { initial_slot_size: 1 }));
+
 struct HandlerInner {
   id: u32,
   recipient: RefCell<Option<Recipient<ProtocolMsg>>>,
-  id_address_map: &'static IdAddressMap,
+  endpoints: RefCell<HashMap<String, String>>,
 }
 
 impl HandlerInner {
@@ -66,67 +89,72 @@ impl HandlerInner {
     HandlerInner {
       id: next_id(),
       recipient: RefCell::new(None),
-      id_address_map: IdAddressMap::singleton(),
+      endpoints: RefCell::new(HashMap::default()),
     }
   }
 
   fn assign_address(&self, address: Recipient<ProtocolMsg>) {
     *self.recipient.borrow_mut() = Some(address.clone());
-    self.id_address_map.add(self.id, address);
   }
 
-  async fn handle_external_msg(self: Rc<Self>, protocol_msg: ProtocolMsg) -> ProtocolMsg {
+  async fn handle_external_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
     log::info!("received external msg: {:?}", protocol_msg);
     match protocol_msg {
       ProtocolMsg::PingReq(req) => maxwell_protocol::PingRep { r#ref: req.r#ref }.into_enum(),
-      ProtocolMsg::ReqReq(req) => {
+      ProtocolMsg::ReqReq(mut req) => {
         let r#ref = req.r#ref;
-        if let Some(endpoint) = ROUTE_TABLE.next_endpoint(&req.path) {
-          log::info!("endpoint: {:?}", endpoint);
-          let connection = CONNECTION_MGR.fetch_connection(&endpoint);
-          let rep = connection.send(req.into_enum()).await;
-          log::info!("received rep: {:?}", rep);
+        if let Some(endpoint) = self.get_endpoint(&req.path) {
+          req.conn0_ref = self.id;
+          log::info!("!!!!!!!!!!!!!{:?}", req);
+          let rep = self.get_connection(&endpoint).try_send(req.into_enum());
           match rep {
-            Ok(rep) => match rep {
-              Ok(ProtocolMsg::ReqRep(mut rep)) => {
-                rep.r#ref = r#ref;
-                rep.into_enum()
-              }
-              Err(err) => maxwell_protocol::ErrorRep {
-                code: 1,
-                desc: format!("Failed to send msg: {:?}", err),
-                r#ref: r#ref,
-              }
-              .into_enum(),
-              _ => maxwell_protocol::ErrorRep {
-                code: 1,
-                desc: format!("Received unexpected msg: {:?}", rep),
-                r#ref: r#ref,
-              }
-              .into_enum(),
-            },
-            Err(err) => maxwell_protocol::ErrorRep {
-              code: 1,
-              desc: format!("Failed to send msg: {:?}", err),
-              r#ref: r#ref,
+            Ok(_) => ProtocolMsg::None,
+            Err(err) => {
+              log::error!("send error: {:?}", err);
+              maxwell_protocol::ErrorRep { code: 1, desc: format!("Send error: {:?}", err), r#ref }
+                .into_enum()
             }
-            .into_enum(),
           }
         } else {
           maxwell_protocol::ErrorRep {
             code: 1,
             desc: format!("Failed to find endpoint for path: {:?}", req.path),
-            r#ref: r#ref,
+            r#ref,
           }
           .into_enum()
         }
       }
-      // ProtocolMsg::DoRep(rep) => {
-      //   if let Some(handler) = self.id_address_map.get(rep.traces[0].handler_id) {
-      //     handler.do_send(rep.into_enum());
-      //   }
-      //   ProtocolMsg::None
-      // }
+      ProtocolMsg::PullReq(mut req) => {
+        let r#ref = req.r#ref;
+        req.conn0_ref = self.id;
+        match TopicLocalizer::singleton().locate(&req.topic).await {
+          Ok(endpoint) => {
+            req.conn0_ref = self.id;
+            let rep = self.get_connection(&*endpoint).try_send(req.into_enum());
+            match rep {
+              Ok(_) => ProtocolMsg::None,
+              Err(err) => {
+                log::error!("send error: {:?}", err);
+                maxwell_protocol::ErrorRep {
+                  code: 1,
+                  desc: format!("Send error: {:?}", err),
+                  r#ref,
+                }
+                .into_enum()
+              }
+            }
+          }
+          Err(err) => {
+            log::error!("localize error: {:?}", err);
+            maxwell_protocol::ErrorRep {
+              code: 1,
+              desc: format!("Localize error: {:?}", err),
+              r#ref,
+            }
+            .into_enum()
+          }
+        }
+      }
       _ => maxwell_protocol::ErrorRep {
         code: 1,
         desc: format!("Received unknown msg: {:?}", protocol_msg),
@@ -136,11 +164,11 @@ impl HandlerInner {
     }
   }
 
-  async fn handle_internal_msg(self: Rc<Self>, protocol_msg: ProtocolMsg) -> ProtocolMsg {
+  async fn handle_internal_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
     log::info!("received internal msg: {:?}", protocol_msg);
     match &protocol_msg {
-      // ProtocolMsg::DoReq(_) => protocol_msg,
-      // ProtocolMsg::DoRep(_) => protocol_msg,
+      ProtocolMsg::ReqRep(_) => protocol_msg,
+      ProtocolMsg::PullRep(_) => protocol_msg,
       _ => maxwell_protocol::ErrorRep {
         code: 1,
         desc: format!("Received unknown msg: {:?}", protocol_msg),
@@ -148,10 +176,33 @@ impl HandlerInner {
       }
       .into_enum(),
     }
+  }
+
+  fn get_endpoint(&self, path: &String) -> Option<String> {
+    let endpoint = { self.endpoints.borrow().get(path).cloned() };
+    if let Some(endpoint) = endpoint {
+      Some(endpoint)
+    } else {
+      if let Some(endpoint) = ROUTE_TABLE.next_endpoint(&path) {
+        self.endpoints.borrow_mut().insert(path.clone(), endpoint.clone());
+        Some(endpoint)
+      } else {
+        None
+      }
+    }
+  }
+
+  fn get_connection(&self, endpoint: &String) -> Arc<Addr<ConnectionLite<EventHandler>>> {
+    CONNECTION_POOL.fetch_with(&endpoint, &|endpoint| {
+      ConnectionLite::start3(
+        endpoint.clone(),
+        ConnectionOptions { reconnect_delay: 1000, ping_interval: None },
+        EventHandler,
+      )
+    })
   }
 }
 
-#[derive(Debug)]
 pub struct Handler {
   inner: Rc<HandlerInner>,
 }
@@ -161,11 +212,14 @@ impl Actor for Handler {
 
   fn started(&mut self, ctx: &mut Self::Context) {
     log::info!("Handler actor started: id: {:?}", self.inner.id);
-    self.inner.assign_address(ctx.address().recipient());
+    let address = ctx.address().recipient();
+    ID_ADDRESS_MAP.add(self.inner.id, address.clone());
+    self.inner.assign_address(address);
   }
 
   fn stopping(&mut self, _: &mut Self::Context) -> Running {
     log::info!("Handler actor stopping: id: {:?}", self.inner.id);
+    ID_ADDRESS_MAP.remove(self.inner.id);
     Running::Stop
   }
 

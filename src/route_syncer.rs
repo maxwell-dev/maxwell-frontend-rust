@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use actix::prelude::*;
 use futures_intrusive::sync::LocalManualResetEvent;
-use maxwell_client::prelude::*;
 use maxwell_protocol::{self, *};
+use maxwell_utils::prelude::*;
 use tokio::time::{sleep, Duration};
 
 use crate::master_client::MASTER_CLIENT;

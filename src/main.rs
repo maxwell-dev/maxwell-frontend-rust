@@ -7,6 +7,7 @@ mod master_client;
 mod registrar;
 mod route_syncer;
 mod route_table;
+mod topic_localizer;
 
 use actix::prelude::*;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
@@ -30,7 +31,7 @@ async fn main() {
   RouteSyncer::new().start();
 
   HttpServer::new(move || {
-    App::new().wrap(middleware::Logger::default()).route("/", web::get().to(index))
+    App::new().wrap(middleware::Logger::default()).route("/ws", web::get().to(index))
   })
   .bind(format!("{}:{}", "0.0.0.0", CONFIG.http_port))
   .unwrap()

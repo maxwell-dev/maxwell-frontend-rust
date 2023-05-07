@@ -1,20 +1,26 @@
 use std::time::Duration;
 
 use actix::prelude::{Addr, Recipient};
-use maxwell_client::prelude::*;
 use maxwell_protocol::{ProtocolMsg, SendError};
+use maxwell_utils::prelude::{
+  ConnectionFull, ConnectionOptions, ConnectionStatusChangedMsg, SubscribeConnectionStatusMsg,
+  TimeoutExt, UnsubscribeConnectionStatusMsg,
+};
 use once_cell::sync::Lazy;
 
 use crate::config::CONFIG;
 
 pub struct MasterClient {
   _endpoints: Vec<String>,
-  connection: Addr<Connection>,
+  connection: Addr<ConnectionFull>,
 }
 
 impl MasterClient {
   pub fn new(endpoints: &Vec<String>) -> Self {
-    let connection = Connection::start2(endpoints[0].clone());
+    let connection = ConnectionFull::start2(
+      endpoints[0].clone(),
+      ConnectionOptions { reconnect_delay: 1000, ping_interval: None },
+    );
     MasterClient { _endpoints: endpoints.clone(), connection }
   }
 
