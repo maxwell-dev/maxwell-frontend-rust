@@ -18,8 +18,13 @@ use crate::config::CONFIG;
 use crate::handler::Handler;
 use crate::registrar::Registrar;
 
+const MAX_FRAME_SIZE: usize = 134217728;
+
 async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
-  let resp = ws::start(Handler::new(), &req, stream);
+  log::info!("ws req: {:?}", req);
+  let resp =
+    ws::WsResponseBuilder::new(Handler::new(), &req, stream).frame_size(MAX_FRAME_SIZE).start();
+  log::info!("ws resp: {:?}", resp);
   resp
 }
 

@@ -61,7 +61,7 @@ impl EndpointSet {
       return None;
     }
     let next_index = if self.unhealthy_index < len - 1 { self.unhealthy_index + 1 } else { 0 };
-    if let Some(endpoint) = self.healthy_endpoints.get_index(next_index) {
+    if let Some(endpoint) = self.unhealthy_endpoints.get_index(next_index) {
       self.unhealthy_index = next_index;
       return Some(endpoint.clone());
     } else {

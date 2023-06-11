@@ -1,39 +1,37 @@
 use std::time::Duration;
 
 use actix::prelude::{Addr, Recipient};
-use maxwell_protocol::{ProtocolMsg, SendError};
+use maxwell_protocol::{HandleError, ProtocolMsg};
 use maxwell_utils::prelude::{
-  ConnectionFull, ConnectionOptions, ConnectionStatusChangedMsg, SubscribeConnectionStatusMsg,
-  TimeoutExt, UnsubscribeConnectionStatusMsg,
+  ConnectionOptions, FutureStyleConnection, ObservableEvent, ObserveObservableEventWithActorMsg,
+  TimeoutExt, UnobserveObservableEventWithActorMsg,
 };
 use once_cell::sync::Lazy;
 
 use crate::config::CONFIG;
 
 pub struct MasterClient {
-  _endpoints: Vec<String>,
-  connection: Addr<ConnectionFull>,
+  connection: Addr<FutureStyleConnection>,
 }
 
 impl MasterClient {
   pub fn new(endpoints: &Vec<String>) -> Self {
-    let connection = ConnectionFull::start2(
-      endpoints[0].clone(),
-      ConnectionOptions { reconnect_delay: 1000, ping_interval: None },
-    );
-    MasterClient { _endpoints: endpoints.clone(), connection }
+    let mut options = ConnectionOptions::default();
+    options.max_idle_hops = u32::MAX;
+    let connection = FutureStyleConnection::start_with_alt_endpoints2(endpoints.clone(), options);
+    MasterClient { connection }
   }
 
-  pub async fn send(&self, msg: ProtocolMsg) -> Result<ProtocolMsg, SendError> {
+  pub fn observe_connection_event(&self, recip: Recipient<ObservableEvent>) {
+    self.connection.do_send(ObserveObservableEventWithActorMsg { recip })
+  }
+
+  pub fn unobserve_connection_event(&self, recip: Recipient<ObservableEvent>) {
+    self.connection.do_send(UnobserveObservableEventWithActorMsg { recip })
+  }
+
+  pub async fn send(&self, msg: ProtocolMsg) -> Result<ProtocolMsg, HandleError<ProtocolMsg>> {
     self.connection.send(msg).timeout_ext(Duration::from_secs(5)).await
-  }
-
-  pub fn subscribe_connection_status_changed(&self, r: Recipient<ConnectionStatusChangedMsg>) {
-    self.connection.do_send(SubscribeConnectionStatusMsg(r))
-  }
-
-  pub fn unsubscribe_connection_status_changed(&self, r: Recipient<ConnectionStatusChangedMsg>) {
-    self.connection.do_send(UnsubscribeConnectionStatusMsg(r))
   }
 }
 

@@ -107,13 +107,13 @@ impl Actor for Registrar {
     log::info!("Registrar actor started.");
     Rc::clone(&self.inner).register_repeatedly().into_actor(self).spawn(ctx);
     let r = ctx.address().recipient();
-    MASTER_CLIENT.subscribe_connection_status_changed(r);
+    MASTER_CLIENT.observe_connection_event(r);
   }
 
   fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
     log::info!("Registrar actor stopping.");
     let r = ctx.address().recipient();
-    MASTER_CLIENT.unsubscribe_connection_status_changed(r);
+    MASTER_CLIENT.unobserve_connection_event(r);
     Running::Stop
   }
 
@@ -122,14 +122,15 @@ impl Actor for Registrar {
   }
 }
 
-impl Handler<ConnectionStatusChangedMsg> for Registrar {
+impl Handler<ObservableEvent> for Registrar {
   type Result = ();
 
-  fn handle(&mut self, msg: ConnectionStatusChangedMsg, _ctx: &mut Self::Context) -> Self::Result {
-    log::debug!("Received a ConnectionStatusChangedMsg: {:?}", msg);
+  fn handle(&mut self, msg: ObservableEvent, _ctx: &mut Self::Context) -> Self::Result {
+    log::debug!("Received a ObservableEvent: {:?}", msg);
     match msg {
-      ConnectionStatusChangedMsg::Connected => self.inner.connected_event.set(),
-      ConnectionStatusChangedMsg::Disconnected => self.inner.connected_event.reset(),
+      ObservableEvent::Connected(_) => self.inner.connected_event.set(),
+      ObservableEvent::Disconnected(_) => self.inner.connected_event.reset(),
+      _ => {}
     }
   }
 }

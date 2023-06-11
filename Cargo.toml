@@ -29,5 +29,8 @@ quick_cache = "0.3.0"
 serde = "1.0.160"
 serde_derive = "1.0.160"
 
-maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.10.3"}
-maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.8.5"}
+maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.10.8"}
+
+# maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.8.5"}
+
+maxwell-utils = {path = "/Users/xuchaoqian/codebase/bitbros/maxwell/maxwell-utils-impls/maxwell-utils-rust"}
