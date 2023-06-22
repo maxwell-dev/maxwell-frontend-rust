@@ -36,7 +36,7 @@ impl MasterClient {
 }
 
 pub static MASTER_CLIENT: Lazy<MasterClient> =
-  Lazy::new(|| MasterClient::new(&CONFIG.master_endpoints));
+  Lazy::new(|| MasterClient::new(&CONFIG.master.private_ctrl_endpoints));
 
 #[cfg(test)]
 mod tests {

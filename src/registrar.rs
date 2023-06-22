@@ -7,6 +7,7 @@ use maxwell_utils::prelude::*;
 use tokio::time::{sleep, Duration};
 
 use crate::config::CONFIG;
+use crate::ip_resolver::IP_RESOLVER;
 use crate::master_client::MASTER_CLIENT;
 
 struct RegistrarInner {
@@ -47,22 +48,13 @@ impl RegistrarInner {
       }
     }
 
-    let req = ResolveIpReq { r#ref: 0 };
-    log::info!("Resolving ip: req: {:?}", req);
-    match MASTER_CLIENT.send(req.into_enum()).await {
-      Ok(rep) => match rep {
-        ProtocolMsg::ResolveIpRep(rep) => {
-          log::info!("Resolved ip: rep: {:?}", rep);
-          *self.resolved_ip.borrow_mut() = Some(rep.ip.clone());
-          Some(rep.ip)
-        }
-        err => {
-          log::warn!("Failed to resolve ip: err: {:?}", err);
-          None
-        }
-      },
+    match IP_RESOLVER.resolve_ip().await {
+      Ok(ip) => {
+        *self.resolved_ip.borrow_mut() = Some(ip.clone());
+        Some(ip)
+      }
       Err(err) => {
-        log::warn!("Failed to resolve ip: err: {:?}", err);
+        log::error!("Failed to resolve ip: {:?}", err);
         None
       }
     }

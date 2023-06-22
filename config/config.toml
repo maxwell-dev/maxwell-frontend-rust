@@ -1,3 +1,6 @@
 http_port = 10000
 https_port = 11443
-master_endpoints = ["localhost:8081"]
+
+[master]
+private_ctrl_endpoints = ["localhost:8081"]
+public_ctrl_endpoints = ["localhost:8081"]

@@ -3,6 +3,7 @@ extern crate serde_derive;
 
 mod config;
 mod handler;
+mod ip_resolver;
 mod master_client;
 mod registrar;
 mod route_syncer;

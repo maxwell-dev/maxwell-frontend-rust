@@ -5,7 +5,13 @@ use once_cell::sync::Lazy;
 pub struct Config {
   pub http_port: u32,
   pub https_port: u32,
-  pub master_endpoints: Vec<String>,
+  pub master: MasterConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MasterConfig {
+  pub private_ctrl_endpoints: Vec<String>,
+  pub public_ctrl_endpoints: Vec<String>,
 }
 
 impl Config {
