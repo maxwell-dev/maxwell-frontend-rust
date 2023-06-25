@@ -24,7 +24,7 @@ const MAX_FRAME_SIZE: usize = 134217728;
 async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
   log::info!("ws req: {:?}", req);
   let resp =
-    ws::WsResponseBuilder::new(Handler::new(), &req, stream).frame_size(MAX_FRAME_SIZE).start();
+    ws::WsResponseBuilder::new(Handler::new(&req), &req, stream).frame_size(MAX_FRAME_SIZE).start();
   log::info!("ws resp: {:?}", resp);
   resp
 }

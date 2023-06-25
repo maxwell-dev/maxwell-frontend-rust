@@ -10,6 +10,8 @@ use std::{
 };
 
 use actix::{prelude::*, Actor};
+use actix_http::header;
+use actix_web::HttpRequest;
 use actix_web_actors::ws;
 use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
@@ -144,14 +146,21 @@ static CONNECTION_POOL: Lazy<Arc<ConnectionPool<CallbackStyleConnection<EventHan
 
 struct HandlerInner {
   id: u32,
+  agent: String,
+  endpoint: String,
   recip: RefCell<Option<Recipient<ProtocolMsg>>>,
   sticky_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
 impl HandlerInner {
-  fn new() -> Self {
+  fn new(req: &HttpRequest) -> Self {
     HandlerInner {
       id: next_id(),
+      agent: req.headers().get(header::USER_AGENT).map_or_else(
+        || "unknown".to_owned(),
+        |value| value.to_str().unwrap_or("unknown").to_owned(),
+      ),
+      endpoint: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
       recip: RefCell::new(None),
       sticky_connection_mgr: StickyConnectionMgr::new(),
     }
@@ -171,6 +180,10 @@ impl HandlerInner {
         match self.get_connection_by_path(&req.path) {
           Ok(connection) => {
             req.conn0_ref = self.id;
+            if let Some(header) = &mut req.header {
+              header.agent = self.agent.clone();
+              header.endpoint = self.endpoint.clone();
+            }
 
             let rep = connection.send(req.into_enum()).timeout_ext(Duration::from_secs(5)).await;
             match rep {
@@ -380,7 +393,7 @@ impl actix::Handler<ProtocolMsg> for Handler {
 }
 
 impl Handler {
-  pub fn new() -> Self {
-    Self { inner: Rc::new(HandlerInner::new()) }
+  pub fn new(req: &HttpRequest) -> Self {
+    Self { inner: Rc::new(HandlerInner::new(req)) }
   }
 }
