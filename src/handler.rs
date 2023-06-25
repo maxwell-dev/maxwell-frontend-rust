@@ -146,31 +146,31 @@ static CONNECTION_POOL: Lazy<Arc<ConnectionPool<CallbackStyleConnection<EventHan
 
 struct HandlerInner {
   id: u32,
-  agent: String,
-  endpoint: String,
+  user_agent: String,
+  peer_addr: String,
   recip: RefCell<Option<Recipient<ProtocolMsg>>>,
   sticky_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
 impl HandlerInner {
-  fn new(req: &HttpRequest) -> Self {
+  pub fn new(req: &HttpRequest) -> Self {
     HandlerInner {
       id: next_id(),
-      agent: req.headers().get(header::USER_AGENT).map_or_else(
+      user_agent: req.headers().get(header::USER_AGENT).map_or_else(
         || "unknown".to_owned(),
         |value| value.to_str().unwrap_or("unknown").to_owned(),
       ),
-      endpoint: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
+      peer_addr: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
       recip: RefCell::new(None),
       sticky_connection_mgr: StickyConnectionMgr::new(),
     }
   }
 
-  fn assign_address(&self, address: Recipient<ProtocolMsg>) {
+  pub fn set_recip(&self, address: Recipient<ProtocolMsg>) {
     *self.recip.borrow_mut() = Some(address.clone());
   }
 
-  async fn handle_external_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
+  pub async fn handle_external_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
     log::debug!("received external msg: {:?}", protocol_msg);
     match protocol_msg {
       ProtocolMsg::PingReq(req) => maxwell_protocol::PingRep { r#ref: req.r#ref }.into_enum(),
@@ -181,8 +181,8 @@ impl HandlerInner {
           Ok(connection) => {
             req.conn0_ref = self.id;
             if let Some(header) = &mut req.header {
-              header.agent = self.agent.clone();
-              header.endpoint = self.endpoint.clone();
+              header.agent = self.user_agent.clone();
+              header.endpoint = self.peer_addr.clone();
             }
 
             let rep = connection.send(req.into_enum()).timeout_ext(Duration::from_secs(5)).await;
@@ -262,7 +262,7 @@ impl HandlerInner {
     }
   }
 
-  async fn handle_internal_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
+  pub async fn handle_internal_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
     log::debug!("received internal msg: {:?}", protocol_msg);
     match &protocol_msg {
       ProtocolMsg::ReqRep(_) => protocol_msg,
@@ -328,7 +328,7 @@ impl Actor for Handler {
     log::info!("Handler actor started: id: {:?}", self.inner.id);
     let recip = ctx.address().recipient();
     ID_RECIP_MAP.add(self.inner.id, recip.clone());
-    self.inner.assign_address(recip);
+    self.inner.set_recip(recip);
   }
 
   fn stopping(&mut self, _: &mut Self::Context) -> Running {
