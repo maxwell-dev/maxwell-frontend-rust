@@ -43,7 +43,7 @@ impl RouteSyncerInner {
               route.unhealthy_endpoints.clone(),
             );
           }
-          log::info!("Fetched successfully: rep: {:?}", rep);
+          log::debug!("Fetched successfully: rep: {:?}", rep);
           true
         }
         _ => false,

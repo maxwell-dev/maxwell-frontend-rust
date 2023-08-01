@@ -134,6 +134,12 @@ impl MaxwellEventHandler for EventHandler {
           let _ = recip.do_send(rep.into_enum());
         }
       }
+      ProtocolMsg::Error2Rep(rep) => {
+        log::warn!("Received error msg: {:?}", rep);
+        if let Some(recip) = ID_RECIP_MAP.get(rep.conn0_ref) {
+          let _ = recip.do_send(rep.into_enum());
+        }
+      }
       other => {
         log::warn!("Received unknown msg: {:?}", other);
       }
@@ -150,6 +156,7 @@ struct HandlerInner {
   peer_addr: String,
   recip: RefCell<Option<Recipient<ProtocolMsg>>>,
   sticky_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
+  sticky_connection_mgr2: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
 impl HandlerInner {
@@ -163,6 +170,7 @@ impl HandlerInner {
       peer_addr: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
       recip: RefCell::new(None),
       sticky_connection_mgr: StickyConnectionMgr::new(),
+      sticky_connection_mgr2: StickyConnectionMgr::new(),
     }
   }
 
@@ -233,7 +241,7 @@ impl HandlerInner {
                 }
                 .into_enum();
                 if let HandleError::Any { msg, .. } = err {
-                  self.sticky_connection_mgr.remove(&PullReq::from(msg).topic)
+                  self.sticky_connection_mgr2.remove(&PullReq::from(msg).topic)
                 }
                 rep
               }
@@ -298,7 +306,7 @@ impl HandlerInner {
     &self, topic: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
     self
-      .sticky_connection_mgr
+      .sticky_connection_mgr2
       .get_or_init_async(topic, async {
         match TopicLocalizer::singleton().locate(topic).await {
           Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
