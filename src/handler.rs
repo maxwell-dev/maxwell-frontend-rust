@@ -10,11 +10,12 @@ use std::{
 };
 
 use actix::{prelude::*, Actor};
-use actix_http::header;
+use actix_http::{header, ws::Item};
 use actix_web::HttpRequest;
 use actix_web_actors::ws;
 use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
+use bytes::{Bytes, BytesMut};
 use dashmap::{mapref::entry::Entry, DashMap};
 use maxwell_protocol::{self, HandleError, *};
 use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
@@ -327,6 +328,7 @@ impl HandlerInner {
 
 pub struct Handler {
   inner: Rc<HandlerInner>,
+  buf: BytesMut,
 }
 
 impl Actor for Handler {
@@ -357,26 +359,23 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
         ctx.pong(&ws_msg);
       }
       Ok(ws::Message::Pong(_)) => (),
-      Ok(ws::Message::Binary(bin)) => {
-        let inner = self.inner.clone();
-        async move {
-          let res = maxwell_protocol::decode(&bin.into());
-          match res {
-            Ok(req) => Ok(inner.handle_external_msg(req).await),
-            Err(err) => Err(err),
-          }
+      Ok(ws::Message::Binary(bin)) => self.spawn_to_handle_external_msg(bin, ctx),
+      Ok(ws::Message::Continuation(cont)) => match cont {
+        Item::FirstText(data) => {
+          log::error!("Received invalid continuation item: {:?}", data)
         }
-        .into_actor(self)
-        .map(move |res, _act, ctx| match res {
-          Ok(msg) => {
-            if msg.is_some() {
-              ctx.binary(maxwell_protocol::encode(&msg));
-            }
-          }
-          Err(err) => log::error!("Failed to decode msg: {:?}", err),
-        })
-        .spawn(ctx);
-      }
+        Item::FirstBinary(data) => {
+          self.buf.extend_from_slice(&data);
+        }
+        Item::Continue(data) => {
+          self.buf.extend_from_slice(&data);
+        }
+        Item::Last(data) => {
+          self.buf.extend_from_slice(&data);
+          let buf = std::mem::replace(&mut self.buf, BytesMut::new());
+          self.spawn_to_handle_external_msg(buf.freeze(), ctx);
+        }
+      },
       Ok(ws::Message::Close(_)) => ctx.stop(),
       _ => log::error!("Received unknown msg: {:?}", ws_msg),
     }
@@ -402,6 +401,27 @@ impl actix::Handler<ProtocolMsg> for Handler {
 
 impl Handler {
   pub fn new(req: &HttpRequest) -> Self {
-    Self { inner: Rc::new(HandlerInner::new(req)) }
+    Self { inner: Rc::new(HandlerInner::new(req)), buf: BytesMut::new() }
+  }
+
+  fn spawn_to_handle_external_msg(&self, bin: Bytes, ctx: &mut ws::WebsocketContext<Self>) {
+    let inner = self.inner.clone();
+    async move {
+      let res = maxwell_protocol::decode(&bin.into());
+      match res {
+        Ok(req) => Ok(inner.handle_external_msg(req).await),
+        Err(err) => Err(err),
+      }
+    }
+    .into_actor(self)
+    .map(move |res, _act, ctx| match res {
+      Ok(msg) => {
+        if msg.is_some() {
+          ctx.binary(maxwell_protocol::encode(&msg));
+        }
+      }
+      Err(err) => log::error!("Failed to decode msg: {:?}", err),
+    })
+    .spawn(ctx);
   }
 }
