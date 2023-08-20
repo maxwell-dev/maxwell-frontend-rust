@@ -39,6 +39,7 @@ async fn main() {
   HttpServer::new(move || {
     App::new().wrap(middleware::Logger::default()).route("/ws", web::get().to(index))
   })
+  .backlog(100000)
   .bind(format!("{}:{}", "0.0.0.0", CONFIG.http_port))
   .unwrap()
   .run()
