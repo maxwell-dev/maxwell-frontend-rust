@@ -31,5 +31,5 @@ serde = "1.0.164"
 serde_derive = "1.0.164"
 
 maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.11.0"}
-maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.9.1"}
+maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.9.8"}
 # maxwell-utils = {path = "../../maxwell-utils-impls/maxwell-utils-rust"}

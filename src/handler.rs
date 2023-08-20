@@ -149,7 +149,7 @@ impl MaxwellEventHandler for EventHandler {
 }
 
 static CONNECTION_POOL: Lazy<Arc<ConnectionPool<CallbackStyleConnection<EventHandler>>>> =
-  Lazy::new(|| Arc::new(ConnectionPool::new(PoolOptions { slot_size: 8 })));
+  Lazy::new(|| Arc::new(ConnectionPool::new(ConnectionPoolOptions { slot_size: 8 })));
 
 struct HandlerInner {
   id: u32,

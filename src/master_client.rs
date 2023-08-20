@@ -16,9 +16,10 @@ pub struct MasterClient {
 
 impl MasterClient {
   pub fn new(endpoints: &Vec<String>) -> Self {
-    let mut options = ConnectionOptions::default();
-    options.max_idle_hops = u32::MAX;
-    let connection = FutureStyleConnection::start_with_alt_endpoints2(endpoints.clone(), options);
+    let connection = FutureStyleConnection::start_with_alt_endpoints2(
+      endpoints.clone(),
+      ConnectionOptions::default(),
+    );
     MasterClient { connection }
   }
 
