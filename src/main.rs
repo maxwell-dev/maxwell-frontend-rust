@@ -36,13 +36,11 @@ async fn main() {
   Registrar::new().start();
   RouteSyncer::new().start();
 
-  HttpServer::new(move || {
-    App::new().wrap(middleware::Logger::default()).route("/ws", web::get().to(index))
-  })
-  .backlog(100000)
-  .bind(format!("{}:{}", "0.0.0.0", CONFIG.http_port))
-  .unwrap()
-  .run()
-  .await
-  .unwrap();
+  HttpServer::new(move || App::new().route("/ws", web::get().to(index)))
+    .backlog(100000)
+    .bind(format!("{}:{}", "0.0.0.0", CONFIG.http_port))
+    .unwrap()
+    .run()
+    .await
+    .unwrap();
 }
