@@ -1,6 +1,12 @@
+[server]
+backlog = 10000
 http_port = 10000
 https_port = 11443
+keep_alive = 0
+max_connection_rate = 1000
+max_connections = 10000
+max_frame_size = 134217728
+workers = 8
 
-[master]
-private_ctrl_endpoints = ["localhost:8081"]
-public_ctrl_endpoints = ["localhost:8081"]
+[master_client]
+endpoints = ["localhost:8081"]
