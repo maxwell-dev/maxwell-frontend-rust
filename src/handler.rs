@@ -114,8 +114,8 @@ impl<C: Connection> StickyConnectionMgr<C> {
   }
 
   #[inline]
-  pub fn remove(&self, endpoint: &String) {
-    self.connections.remove(endpoint);
+  pub fn remove(&self, key: &String) {
+    self.connections.remove(key);
   }
 }
 
@@ -206,7 +206,9 @@ impl HandlerInner {
                 }
                 .into_enum();
                 if let HandleError::Any { msg, .. } = err {
-                  self.sticky_connection_mgr.remove(&ReqReq::from(msg).path)
+                  let req = &ReqReq::from(msg);
+                  log::warn!("Removing sticky connection: path: {:?}", req.path);
+                  self.sticky_connection_mgr.remove(&req.path)
                 }
                 rep
               }
@@ -242,7 +244,9 @@ impl HandlerInner {
                 }
                 .into_enum();
                 if let HandleError::Any { msg, .. } = err {
-                  self.sticky_connection_mgr2.remove(&PullReq::from(msg).topic)
+                  let req = PullReq::from(msg);
+                  log::warn!("Removing sticky connection: path: {:?}", req.topic);
+                  self.sticky_connection_mgr2.remove(&req.topic)
                 }
                 rep
               }

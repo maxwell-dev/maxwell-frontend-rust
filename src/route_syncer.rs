@@ -37,13 +37,13 @@ impl RouteSyncerInner {
       Ok(rep) => match rep {
         ProtocolMsg::GetRoutesRep(rep) => {
           for route in rep.route_groups.iter() {
-            ROUTE_TABLE.add_route_group(
+            ROUTE_TABLE.set_route_group(
               route.path.clone(),
               route.healthy_endpoints.clone(),
               route.unhealthy_endpoints.clone(),
             );
           }
-          log::debug!("Fetched successfully: rep: {:?}", rep);
+          log::info!("Fetched successfully: rep: {:?}", rep);
           true
         }
         _ => false,

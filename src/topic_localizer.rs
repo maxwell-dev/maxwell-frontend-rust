@@ -40,11 +40,7 @@ impl TopicLocalizer {
           .await
         {
           Ok(rep) => match rep {
-            maxwell_protocol::ProtocolMsg::LocateTopicRep(rep) => {
-              let endpoint = Arc::new(rep.endpoint);
-              self.cache.insert(topic.clone(), endpoint.clone());
-              Ok(endpoint)
-            }
+            maxwell_protocol::ProtocolMsg::LocateTopicRep(rep) => Ok(Arc::new(rep.endpoint)),
             err => {
               Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
             }

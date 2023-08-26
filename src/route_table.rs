@@ -80,7 +80,7 @@ impl RouteTable {
     RouteTable { route_groups: DashMap::with_capacity_and_hasher(64, AHasher::default()) }
   }
 
-  pub fn add_route_group(
+  pub fn set_route_group(
     &self, path: String, healthy_endpoints: Vec<String>, unhealthy_endpoints: Vec<String>,
   ) {
     let mut route_group = self.route_groups.entry(path).or_insert_with(|| {
