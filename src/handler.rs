@@ -21,8 +21,8 @@ use maxwell_protocol::{self, HandleError, *};
 use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
 use once_cell::sync::Lazy;
 
-use crate::route_table::ROUTE_TABLE;
 use crate::topic_localizer::TopicLocalizer;
+use crate::{config::CONFIG, route_table::ROUTE_TABLE};
 
 static ID_SEED: AtomicU32 = AtomicU32::new(1);
 
@@ -73,18 +73,18 @@ impl<C: Connection> StickyConnectionMgr<C> {
   ) -> Result<Arc<Addr<C>>> {
     match self.connections.entry(key.to_owned()) {
       Entry::Occupied(mut entry) => {
-        let connection = entry.get_mut();
+        let connection = entry.get();
         if connection.connected() {
           Ok(Arc::clone(connection))
         } else {
           init_connection().and_then(|connection| {
-            entry.insert(connection.clone());
+            entry.insert(Arc::clone(&connection));
             Ok(connection)
           })
         }
       }
       Entry::Vacant(entry) => init_connection().and_then(|connection| {
-        entry.insert(connection.clone());
+        entry.insert(Arc::clone(&connection));
         Ok(connection)
       }),
     }
@@ -101,13 +101,13 @@ impl<C: Connection> StickyConnectionMgr<C> {
           Ok(Arc::clone(connection))
         } else {
           init_connection.await.and_then(|connection| {
-            entry.insert(connection.clone());
+            entry.insert(Arc::clone(&connection));
             Ok(connection)
           })
         }
       }
       Entry::Vacant(entry) => init_connection.await.and_then(|connection| {
-        entry.insert(connection.clone());
+        entry.insert(Arc::clone(&connection));
         Ok(connection)
       }),
     }
@@ -119,7 +119,10 @@ impl<C: Connection> StickyConnectionMgr<C> {
   }
 }
 
-struct EventHandler;
+struct EventHandler {
+  endpoint: String,
+  continuous_disconnected_times: AtomicU32,
+}
 
 impl MaxwellEventHandler for EventHandler {
   #[inline]
@@ -146,10 +149,40 @@ impl MaxwellEventHandler for EventHandler {
       }
     }
   }
+
+  #[inline]
+  fn on_connected(&self, _addr: Addr<CallbackStyleConnection<Self>>) {
+    log::debug!("Connected: endpoint: {:?}", self.endpoint);
+    self.continuous_disconnected_times.store(0, Ordering::Relaxed);
+  }
+
+  #[inline]
+  fn on_disconnected(&self, addr: Addr<CallbackStyleConnection<Self>>) {
+    log::debug!("Disconnected: endpoint: {:?}", self.endpoint);
+    let prev = self.continuous_disconnected_times.fetch_add(1, Ordering::Relaxed);
+    if prev + 1 >= CONFIG.handler.max_continuous_disconnected_times {
+      log::warn!(
+        "Disconnected too many times, stop and remove this connection: endpoint: {:?}",
+        self.endpoint
+      );
+      addr.do_send(StopMsg);
+      CONNECTION_POOL.remove_by_endpoint(&self.endpoint);
+    }
+  }
+}
+
+impl EventHandler {
+  pub fn new(endpoint: String) -> Self {
+    Self { endpoint, continuous_disconnected_times: AtomicU32::new(0) }
+  }
 }
 
 static CONNECTION_POOL: Lazy<Arc<ConnectionPool<CallbackStyleConnection<EventHandler>>>> =
-  Lazy::new(|| Arc::new(ConnectionPool::new(ConnectionPoolOptions { slot_size: 8 })));
+  Lazy::new(|| {
+    Arc::new(ConnectionPool::new(ConnectionPoolOptions {
+      slot_size: CONFIG.handler.connection_pool_slot_size,
+    }))
+  });
 
 struct HandlerInner {
   id: u32,
@@ -194,13 +227,16 @@ impl HandlerInner {
               header.endpoint = self.peer_addr.clone();
             }
 
-            let rep = connection.send(req.into_enum()).timeout_ext(Duration::from_secs(5)).await;
+            let rep = connection
+              .send(req.into_enum())
+              .timeout_ext(Duration::from_secs(CONFIG.handler.request_timeout))
+              .await;
             match rep {
               Ok(_) => ProtocolMsg::None,
               Err(err) => {
                 log::error!("Failed to send: error: {:?}", err);
                 let rep = maxwell_protocol::ErrorRep {
-                  code: 1,
+                  code: ErrorCode::FailedToRequestService as i32,
                   desc: format!("Failed to send: error: {:?}", err),
                   r#ref,
                 }
@@ -217,7 +253,7 @@ impl HandlerInner {
           Err(err) => {
             log::error!("Failed to get connetion: err: {:?}", err);
             maxwell_protocol::ErrorRep {
-              code: 1,
+              code: ErrorCode::FrontendError as i32,
               desc: format!("Failed to get connetion: err: {:?}", err),
               r#ref,
             }
@@ -232,13 +268,16 @@ impl HandlerInner {
           Ok(connection) => {
             req.conn0_ref = self.id;
 
-            let rep = connection.send(req.into_enum()).timeout_ext(Duration::from_secs(5)).await;
+            let rep = connection
+              .send(req.into_enum())
+              .timeout_ext(Duration::from_secs(CONFIG.handler.pull_timeout))
+              .await;
             match rep {
               Ok(_) => ProtocolMsg::None,
               Err(err) => {
                 log::error!("Failed to send: error: {:?}", err);
                 let rep = maxwell_protocol::ErrorRep {
-                  code: 1,
+                  code: ErrorCode::FailedToRequestBackend as i32,
                   desc: format!("Failed to send: error: {:?}", err),
                   r#ref,
                 }
@@ -255,7 +294,7 @@ impl HandlerInner {
           Err(err) => {
             log::error!("Failed to localize: err: {:?}", err);
             maxwell_protocol::ErrorRep {
-              code: 1,
+              code: ErrorCode::FrontendError as i32,
               desc: format!("Failed to localize: err: {:?}", err),
               r#ref,
             }
@@ -266,7 +305,7 @@ impl HandlerInner {
       _ => {
         log::error!("Received unknown msg: {:?}", protocol_msg);
         maxwell_protocol::ErrorRep {
-          code: 1,
+          code: ErrorCode::UnknownMsg as i32,
           desc: format!("Received unknown msg: {:?}", protocol_msg),
           r#ref: 0,
         }
@@ -280,10 +319,18 @@ impl HandlerInner {
     match &protocol_msg {
       ProtocolMsg::ReqRep(_) => protocol_msg,
       ProtocolMsg::PullRep(_) => protocol_msg,
+      ProtocolMsg::Error2Rep(err) => {
+        if err.code == 98 {
+          self.sticky_connection_mgr.remove(&err.desc);
+        } else if err.code == 99 {
+          self.sticky_connection_mgr2.remove(&err.desc);
+        }
+        protocol_msg
+      }
       _ => maxwell_protocol::ErrorRep {
-        code: 1,
+        code: ErrorCode::UnknownMsg as i32,
         desc: format!("Received unknown msg: {:?}", protocol_msg),
-        r#ref: 0,
+        r#ref: get_ref(&protocol_msg),
       }
       .into_enum(),
     }
@@ -298,7 +345,7 @@ impl HandlerInner {
           CallbackStyleConnection::start3(
             endpoint.to_owned(),
             ConnectionOptions::default(),
-            EventHandler,
+            EventHandler::new(endpoint.clone()),
           )
         }))
       } else {
@@ -318,7 +365,7 @@ impl HandlerInner {
             CallbackStyleConnection::start3(
               endpoint.to_owned(),
               ConnectionOptions::default(),
-              EventHandler,
+              EventHandler::new(endpoint.clone()),
             )
           })),
           Err(err) => {

@@ -8,6 +8,8 @@ use serde::de::{Deserialize, Deserializer};
 pub struct Config {
   pub server: ServerConfig,
   pub master_client: MasterClientConfig,
+  pub route_syncer: RouteSyncerConfig,
+  pub handler: HandlerConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +38,19 @@ where D: Deserializer<'de> {
 #[derive(Debug, Deserialize)]
 pub struct MasterClientConfig {
   pub endpoints: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HandlerConfig {
+  pub connection_pool_slot_size: u8,
+  pub max_continuous_disconnected_times: u32,
+  pub pull_timeout: u64,
+  pub request_timeout: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RouteSyncerConfig {
+  pub sync_interval: u64,
 }
 
 impl Config {

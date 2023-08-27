@@ -36,11 +36,11 @@ impl TopicLocalizer {
       .cache
       .get_or_insert_async(topic, async {
         match MASTER_CLIENT
-          .send(maxwell_protocol::LocateTopicReq { topic: topic.clone(), r#ref: 0 }.into_enum())
+          .send(LocateTopicReq { topic: topic.clone(), r#ref: 0 }.into_enum())
           .await
         {
           Ok(rep) => match rep {
-            maxwell_protocol::ProtocolMsg::LocateTopicRep(rep) => Ok(Arc::new(rep.endpoint)),
+            ProtocolMsg::LocateTopicRep(rep) => Ok(Arc::new(rep.endpoint)),
             err => {
               Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
             }

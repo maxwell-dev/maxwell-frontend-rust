@@ -6,8 +6,8 @@ use maxwell_protocol::{self, *};
 use maxwell_utils::prelude::*;
 use tokio::time::{sleep, Duration};
 
-use crate::master_client::MASTER_CLIENT;
 use crate::route_table::ROUTE_TABLE;
+use crate::{config::CONFIG, master_client::MASTER_CLIENT};
 
 struct RouteSyncerInner {
   connected_event: LocalManualResetEvent,
@@ -23,7 +23,7 @@ impl RouteSyncerInner {
       self.connected_event.wait().await;
 
       if self.fetch().await {
-        sleep(Duration::from_secs(60)).await;
+        sleep(Duration::from_secs(CONFIG.route_syncer.sync_interval)).await;
       } else {
         sleep(Duration::from_millis(1000)).await;
       }

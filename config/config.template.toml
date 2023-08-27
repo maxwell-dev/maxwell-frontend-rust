@@ -1,12 +1,21 @@
 [server]
-backlog = 10000
+backlog = 2048
 http_port = 10000
 https_port = 11443
-keep_alive = 0
-max_connection_rate = 1000
-max_connections = 10000
+keep_alive = 5
+max_connection_rate = 1024
+max_connections = 100000
 max_frame_size = 134217728
 workers = 8
 
 [master_client]
 endpoints = ["localhost:8081"]
+
+[handler]
+connection_pool_slot_size = 8
+max_continuous_disconnected_times = 10
+pull_timeout = 5
+request_timeout = 5
+
+[route_syncer]
+sync_interval = 5
