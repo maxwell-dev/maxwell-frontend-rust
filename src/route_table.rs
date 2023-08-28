@@ -1,4 +1,4 @@
-use ahash::RandomState as AHasher;
+use ahash::{AHashSet, RandomState as AHasher};
 use dashmap::{mapref::entry::Entry as DashEntry, DashMap};
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
@@ -76,10 +76,12 @@ pub struct RouteTable {
 }
 
 impl RouteTable {
+  #[inline]
   fn new() -> Self {
     RouteTable { route_groups: DashMap::with_capacity_and_hasher(64, AHasher::default()) }
   }
 
+  #[inline]
   pub fn set_route_group(
     &self, path: String, healthy_endpoints: Vec<String>, unhealthy_endpoints: Vec<String>,
   ) {
@@ -91,6 +93,20 @@ impl RouteTable {
     route_group.replace_unhealthy_endpoints(unhealthy_endpoints.into_iter().collect());
   }
 
+  #[inline]
+  pub fn remove_if_not_exists(&self, paths: AHashSet<String>) {
+    let mut stale_paths = Vec::with_capacity(self.route_groups.len());
+    for route_group in self.route_groups.iter() {
+      if !paths.contains(route_group.key()) {
+        stale_paths.push(route_group.key().clone());
+      }
+    }
+    for stale_path in stale_paths {
+      self.route_groups.remove(&stale_path);
+    }
+  }
+
+  #[inline]
   pub fn next_endpoint(&self, path: &String) -> Option<String> {
     match self.route_groups.entry(path.clone()) {
       DashEntry::Occupied(mut occupied) => {

@@ -159,10 +159,11 @@ impl MaxwellEventHandler for EventHandler {
   #[inline]
   fn on_disconnected(&self, addr: Addr<CallbackStyleConnection<Self>>) {
     log::debug!("Disconnected: endpoint: {:?}", self.endpoint);
-    let prev = self.continuous_disconnected_times.fetch_add(1, Ordering::Relaxed);
-    if prev + 1 >= CONFIG.handler.max_continuous_disconnected_times {
+    let times = self.continuous_disconnected_times.fetch_add(1, Ordering::Relaxed) + 1;
+    if times >= CONFIG.handler.max_continuous_disconnected_times {
       log::warn!(
-        "Disconnected too many times, stop and remove this connection: endpoint: {:?}",
+        "Disconnected too many times: {:?}, stop and remove this connection: endpoint: {:?}",
+        times,
         self.endpoint
       );
       addr.do_send(StopMsg);
@@ -320,10 +321,18 @@ impl HandlerInner {
       ProtocolMsg::ReqRep(_) => protocol_msg,
       ProtocolMsg::PullRep(_) => protocol_msg,
       ProtocolMsg::Error2Rep(err) => {
-        if err.code == 98 {
-          self.sticky_connection_mgr.remove(&err.desc);
-        } else if err.code == 99 {
-          self.sticky_connection_mgr2.remove(&err.desc);
+        if err.code == ErrorCode::UnknownPath as i32 {
+          if let Some((_, path)) = err.desc.split_once(':') {
+            let path = path.trim().to_owned();
+            log::warn!("Removing sticky connection: path: {:?}", path);
+            self.sticky_connection_mgr.remove(&path);
+          }
+        } else if err.code == ErrorCode::UnknownTopic as i32 {
+          if let Some((_, topic)) = err.desc.split_once(':') {
+            let topic = topic.trim().to_owned();
+            log::warn!("Removing sticky connection: topic: {:?}", topic);
+            self.sticky_connection_mgr2.remove(&topic);
+          }
         }
         protocol_msg
       }

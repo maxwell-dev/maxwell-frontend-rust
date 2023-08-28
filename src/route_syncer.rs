@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use actix::prelude::*;
+use ahash::AHashSet;
 use futures_intrusive::sync::LocalManualResetEvent;
 use maxwell_protocol::{self, *};
 use maxwell_utils::prelude::*;
@@ -36,13 +37,16 @@ impl RouteSyncerInner {
     match MASTER_CLIENT.send(req).await {
       Ok(rep) => match rep {
         ProtocolMsg::GetRoutesRep(rep) => {
+          let mut paths = AHashSet::with_capacity(rep.route_groups.len());
           for route in rep.route_groups.iter() {
             ROUTE_TABLE.set_route_group(
               route.path.clone(),
               route.healthy_endpoints.clone(),
               route.unhealthy_endpoints.clone(),
             );
+            paths.insert(route.path.clone());
           }
+          ROUTE_TABLE.remove_if_not_exists(paths);
           log::info!("Fetched successfully: rep: {:?}", rep);
           true
         }
