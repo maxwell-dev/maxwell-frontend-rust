@@ -16,7 +16,8 @@ use actix_web_actors::ws;
 use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
 use bytes::{Bytes, BytesMut};
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::DashMap;
+use flurry::HashMap as FlurryHashMap;
 use maxwell_protocol::{self, HandleError, *};
 use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
 use once_cell::sync::Lazy;
@@ -58,35 +59,35 @@ impl IdRecipMap {
 static ID_RECIP_MAP: Lazy<IdRecipMap> = Lazy::new(|| IdRecipMap::new());
 
 pub struct StickyConnectionMgr<C: Connection> {
-  connections: DashMap<String, Arc<Addr<C>>, AHasher>,
+  connections: FlurryHashMap<String, Arc<Addr<C>>, AHasher>,
 }
 
 impl<C: Connection> StickyConnectionMgr<C> {
   #[inline]
   pub fn new() -> Self {
-    StickyConnectionMgr { connections: DashMap::with_capacity_and_hasher(8, AHasher::new()) }
+    StickyConnectionMgr { connections: FlurryHashMap::with_capacity_and_hasher(8, AHasher::new()) }
   }
 
   #[inline]
   pub fn get_or_init(
     &self, key: &String, init_connection: impl FnOnce() -> Result<Arc<Addr<C>>>,
   ) -> Result<Arc<Addr<C>>> {
-    match self.connections.entry(key.to_owned()) {
-      Entry::Occupied(mut entry) => {
-        let connection = entry.get();
-        if connection.connected() {
-          Ok(Arc::clone(connection))
-        } else {
-          init_connection().and_then(|connection| {
-            entry.insert(Arc::clone(&connection));
-            Ok(connection)
-          })
-        }
+    let guard = self.connections.guard();
+    let connection = self.connections.get(key, &guard);
+    if let Some(connection) = connection {
+      if connection.connected() {
+        Ok(Arc::clone(connection))
+      } else {
+        init_connection().and_then(|connection| {
+          self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+          Ok(connection)
+        })
       }
-      Entry::Vacant(entry) => init_connection().and_then(|connection| {
-        entry.insert(Arc::clone(&connection));
+    } else {
+      init_connection().and_then(|connection| {
+        self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
         Ok(connection)
-      }),
+      })
     }
   }
 
@@ -94,28 +95,29 @@ impl<C: Connection> StickyConnectionMgr<C> {
   pub async fn get_or_init_async(
     &self, key: &String, init_connection: impl Future<Output = Result<Arc<Addr<C>>>>,
   ) -> Result<Arc<Addr<C>>> {
-    match self.connections.entry(key.to_owned()) {
-      Entry::Occupied(mut entry) => {
-        let connection = entry.get_mut();
-        if connection.connected() {
-          Ok(Arc::clone(connection))
-        } else {
-          init_connection.await.and_then(|connection| {
-            entry.insert(Arc::clone(&connection));
-            Ok(connection)
-          })
-        }
+    let guard = self.connections.guard();
+    let connection = self.connections.get(key, &guard);
+    if let Some(connection) = connection {
+      if connection.connected() {
+        Ok(Arc::clone(connection))
+      } else {
+        init_connection.await.and_then(|connection| {
+          self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+          Ok(connection)
+        })
       }
-      Entry::Vacant(entry) => init_connection.await.and_then(|connection| {
-        entry.insert(Arc::clone(&connection));
+    } else {
+      init_connection.await.and_then(|connection| {
+        self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
         Ok(connection)
-      }),
+      })
     }
   }
 
   #[inline]
   pub fn remove(&self, key: &String) {
-    self.connections.remove(key);
+    let guard = self.connections.guard();
+    self.connections.remove(key, &guard);
   }
 }
 
@@ -285,7 +287,7 @@ impl HandlerInner {
                 .into_enum();
                 if let HandleError::Any { msg, .. } = err {
                   let req = PullReq::from(msg);
-                  log::warn!("Removing sticky connection: path: {:?}", req.topic);
+                  log::warn!("Removing sticky connection: topic: {:?}", req.topic);
                   self.sticky_connection_mgr2.remove(&req.topic)
                 }
                 rep
