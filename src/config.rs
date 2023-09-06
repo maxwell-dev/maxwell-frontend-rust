@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{env::current_dir, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
@@ -16,6 +16,10 @@ pub struct Config {
 pub struct ServerConfig {
   pub http_port: u32,
   pub https_port: u32,
+  #[serde(deserialize_with = "deserialize_path")]
+  pub cert_file: String,
+  #[serde(deserialize_with = "deserialize_path")]
+  pub key_file: String,
   pub backlog: u32,
   #[serde(deserialize_with = "deserialize_keep_alive", default)]
   pub keep_alive: Option<Duration>,
@@ -23,6 +27,24 @@ pub struct ServerConfig {
   pub max_connections: usize,
   pub workers: usize,
   pub max_frame_size: usize,
+}
+
+fn deserialize_path<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+  let path: String = Deserialize::deserialize(deserializer)?;
+  let path = PathBuf::from(path);
+  if path.is_absolute() {
+    Ok(path.display().to_string())
+  } else {
+    current_dir()
+      .with_context(|| format!("Failed to get current dir"))
+      .map_err(serde::de::Error::custom)?
+      .join(path)
+      .display()
+      .to_string()
+      .parse()
+      .map_err(serde::de::Error::custom)
+  }
 }
 
 fn deserialize_keep_alive<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
