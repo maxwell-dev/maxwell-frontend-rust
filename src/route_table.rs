@@ -94,7 +94,7 @@ impl RouteTable {
   }
 
   #[inline]
-  pub fn remove_if_not_exists(&self, paths: AHashSet<String>) {
+  pub fn remove_if_not_in(&self, paths: AHashSet<String>) {
     let mut stale_paths = Vec::with_capacity(self.route_groups.len());
     for route_group in self.route_groups.iter() {
       if !paths.contains(route_group.key()) {

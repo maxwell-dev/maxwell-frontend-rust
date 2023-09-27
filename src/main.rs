@@ -7,6 +7,7 @@ mod master_client;
 mod registrar;
 mod route_syncer;
 mod route_table;
+mod topic_cleaner;
 mod topic_localizer;
 
 use std::{fs::File, io::BufReader};
@@ -19,7 +20,7 @@ use futures::future;
 use route_syncer::RouteSyncer;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
-use topic_localizer::TopicLocalizerHelper;
+use topic_cleaner::TopicCleaner;
 
 use crate::config::CONFIG;
 use crate::handler::Handler;
@@ -39,7 +40,7 @@ async fn main() -> Result<()> {
 
   Registrar::new().start();
   RouteSyncer::new().start();
-  TopicLocalizerHelper::new().start();
+  TopicCleaner::new().start();
 
   future::try_join(create_http_server(false), create_http_server(true)).await?;
   Ok(())

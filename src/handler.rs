@@ -17,9 +17,9 @@ use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
 use bytes::{Bytes, BytesMut};
 use dashmap::DashMap;
-use flurry::HashMap as FlurryHashMap;
 use maxwell_protocol::{self, HandleError, *};
 use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
+use moka_cht::map::HashMap as MokaHashMap;
 use once_cell::sync::Lazy;
 
 use crate::topic_localizer::TopicLocalizer;
@@ -59,33 +59,32 @@ impl IdRecipMap {
 static ID_RECIP_MAP: Lazy<IdRecipMap> = Lazy::new(|| IdRecipMap::new());
 
 pub struct StickyConnectionMgr<C: Connection> {
-  connections: FlurryHashMap<String, Arc<Addr<C>>, AHasher>,
+  connections: MokaHashMap<String, Arc<Addr<C>>, AHasher>,
 }
 
 impl<C: Connection> StickyConnectionMgr<C> {
   #[inline]
   pub fn new() -> Self {
-    StickyConnectionMgr { connections: FlurryHashMap::with_capacity_and_hasher(8, AHasher::new()) }
+    StickyConnectionMgr { connections: MokaHashMap::with_capacity_and_hasher(8, AHasher::new()) }
   }
 
   #[inline]
   pub fn get_or_init(
     &self, key: &String, init_connection: impl FnOnce() -> Result<Arc<Addr<C>>>,
   ) -> Result<Arc<Addr<C>>> {
-    let guard = self.connections.guard();
-    let connection = self.connections.get(key, &guard);
+    let connection = self.connections.get(key);
     if let Some(connection) = connection {
       if connection.connected() {
-        Ok(Arc::clone(connection))
+        Ok(connection)
       } else {
         init_connection().and_then(|connection| {
-          self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+          self.connections.insert(key.to_owned(), Arc::clone(&connection));
           Ok(connection)
         })
       }
     } else {
       init_connection().and_then(|connection| {
-        self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+        self.connections.insert(key.to_owned(), Arc::clone(&connection));
         Ok(connection)
       })
     }
@@ -95,20 +94,19 @@ impl<C: Connection> StickyConnectionMgr<C> {
   pub async fn get_or_init_async(
     &self, key: &String, init_connection: impl Future<Output = Result<Arc<Addr<C>>>>,
   ) -> Result<Arc<Addr<C>>> {
-    let guard = self.connections.guard();
-    let connection = self.connections.get(key, &guard);
+    let connection = self.connections.get(key);
     if let Some(connection) = connection {
       if connection.connected() {
-        Ok(Arc::clone(connection))
+        Ok(connection)
       } else {
         init_connection.await.and_then(|connection| {
-          self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+          self.connections.insert(key.to_owned(), Arc::clone(&connection));
           Ok(connection)
         })
       }
     } else {
       init_connection.await.and_then(|connection| {
-        self.connections.insert(key.to_owned(), Arc::clone(&connection), &guard);
+        self.connections.insert(key.to_owned(), Arc::clone(&connection));
         Ok(connection)
       })
     }
@@ -116,8 +114,7 @@ impl<C: Connection> StickyConnectionMgr<C> {
 
   #[inline]
   pub fn remove(&self, key: &String) {
-    let guard = self.connections.guard();
-    self.connections.remove(key, &guard);
+    self.connections.remove(key);
   }
 }
 
@@ -439,7 +436,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
         }
       },
       Ok(ws::Message::Close(_)) => ctx.stop(),
-      _ => log::error!("Received unknown msg: {:?}", ws_msg),
+      _ => {
+        log::error!("Received unknown msg: {:?}", ws_msg);
+        ctx.stop();
+      }
     }
   }
 }

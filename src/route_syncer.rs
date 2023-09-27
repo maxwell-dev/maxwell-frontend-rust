@@ -92,7 +92,7 @@ impl RouteSyncerInner {
             );
             paths.insert(route.path.clone());
           }
-          ROUTE_TABLE.remove_if_not_exists(paths);
+          ROUTE_TABLE.remove_if_not_in(paths);
           true
         }
         _ => {
