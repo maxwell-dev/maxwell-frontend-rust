@@ -27,6 +27,7 @@ use crate::{config::CONFIG, route_table::ROUTE_TABLE};
 
 static ID_SEED: AtomicU32 = AtomicU32::new(1);
 
+#[inline]
 fn next_id() -> u32 {
   ID_SEED.fetch_add(1, Ordering::Relaxed)
 }
@@ -35,18 +36,22 @@ fn next_id() -> u32 {
 struct IdRecipMap(DashMap<u32, Recipient<ProtocolMsg>, AHasher>);
 
 impl IdRecipMap {
+  #[inline]
   pub fn new() -> Self {
     IdRecipMap(DashMap::with_capacity_and_hasher(1024, AHasher::default()))
   }
 
+  #[inline]
   pub fn add(&self, id: u32, recip: Recipient<ProtocolMsg>) {
     self.0.insert(id, recip);
   }
 
+  #[inline]
   pub fn remove(&self, id: u32) {
     self.0.remove(&id);
   }
 
+  #[inline]
   pub fn get(&self, id: u32) -> Option<Recipient<ProtocolMsg>> {
     if let Some(recip) = self.0.get(&id) {
       Some(recip.clone())
@@ -462,6 +467,7 @@ impl actix::Handler<ProtocolMsg> for Handler {
 }
 
 impl Handler {
+  #[inline]
   pub fn new(req: &HttpRequest) -> Self {
     Self { inner: Rc::new(HandlerInner::new(req)), buf: BytesMut::new() }
   }

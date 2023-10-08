@@ -23,10 +23,12 @@ pub struct TopicLocalizer {
 static TOPIC_LOCALIZER: OnceCell<TopicLocalizer> = OnceCell::new();
 
 impl TopicLocalizer {
+  #[inline]
   pub fn new() -> Self {
     Self { cache: Cache::with_weighter(100000, 100000 * 30, EndpointWeighter) }
   }
 
+  #[inline]
   pub fn singleton() -> &'static Self {
     TOPIC_LOCALIZER.get_or_init(Self::new)
   }
@@ -53,6 +55,7 @@ impl TopicLocalizer {
       .await
   }
 
+  #[inline]
   pub fn clear(&self) {
     self.cache.clear();
   }
