@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use maxwell_protocol::{self, *};
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use quick_cache::{sync::Cache, Weighter};
 
 use crate::master_client::MASTER_CLIENT;
@@ -20,17 +20,12 @@ pub struct TopicLocalizer {
   cache: Cache<String, Arc<String>, EndpointWeighter>,
 }
 
-static TOPIC_LOCALIZER: OnceCell<TopicLocalizer> = OnceCell::new();
+pub static TOPIC_LOCALIZER: Lazy<TopicLocalizer> = Lazy::new(|| TopicLocalizer::new());
 
 impl TopicLocalizer {
   #[inline]
   pub fn new() -> Self {
     Self { cache: Cache::with_weighter(100000, 100000 * 30, EndpointWeighter) }
-  }
-
-  #[inline]
-  pub fn singleton() -> &'static Self {
-    TOPIC_LOCALIZER.get_or_init(Self::new)
   }
 
   pub async fn locate(&self, topic: &String) -> Result<Arc<String>> {

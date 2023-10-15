@@ -13,7 +13,7 @@ mod topic_localizer;
 use std::{fs::File, io::BufReader};
 
 use actix::prelude::*;
-use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 use anyhow::{anyhow, Result};
 use futures::future;
@@ -47,12 +47,14 @@ async fn main() -> Result<()> {
 }
 
 async fn create_http_server(is_https: bool) -> Result<()> {
-  let http_server = HttpServer::new(move || App::new().route("/$ws", web::get().to(ws)))
-    .backlog(CONFIG.server.backlog)
-    .keep_alive(CONFIG.server.keep_alive)
-    .max_connection_rate(CONFIG.server.max_connection_rate)
-    .max_connections(CONFIG.server.max_connections)
-    .workers(CONFIG.server.workers);
+  let http_server = HttpServer::new(move || {
+    App::new().wrap(middleware::Logger::default()).route("/$ws", web::get().to(ws))
+  })
+  .backlog(CONFIG.server.backlog)
+  .keep_alive(CONFIG.server.keep_alive)
+  .max_connection_rate(CONFIG.server.max_connection_rate)
+  .max_connections(CONFIG.server.max_connections)
+  .workers(CONFIG.server.workers);
 
   if is_https {
     http_server.bind_rustls_021(

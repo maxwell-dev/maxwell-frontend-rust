@@ -64,6 +64,8 @@ pub struct MasterClientConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct HandlerConfig {
+  pub id_recip_map_size: u32,
+  pub connection_cache_size: u32,
   pub connection_pool_slot_size: u8,
   pub max_continuous_disconnected_times: u32,
   pub pull_timeout: u64,

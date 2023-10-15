@@ -1,5 +1,5 @@
 use ahash::{AHashSet, RandomState as AHasher};
-use dashmap::{mapref::entry::Entry as DashEntry, DashMap};
+use dashmap::DashMap;
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 
@@ -14,6 +14,7 @@ struct EndpointSet {
 }
 
 impl EndpointSet {
+  #[inline]
   pub fn new() -> Self {
     EndpointSet {
       healthy_endpoints: AIndexSet::with_capacity_and_hasher(64, AHasher::default()),
@@ -23,14 +24,17 @@ impl EndpointSet {
     }
   }
 
+  #[inline]
   pub fn replace_healthy_endpoints(&mut self, endpoints: AIndexSet<String>) {
     self.healthy_endpoints = endpoints;
   }
 
+  #[inline]
   pub fn replace_unhealthy_endpoints(&mut self, endpoints: AIndexSet<String>) {
     self.unhealthy_endpoints = endpoints;
   }
 
+  #[inline]
   pub fn next_endpoint(&mut self) -> Option<String> {
     if let Some(endpoint) = self.next_healthy_endpoint() {
       return Some(endpoint);
@@ -41,6 +45,18 @@ impl EndpointSet {
     return None;
   }
 
+  #[inline]
+  pub fn get_endpoint(&self, index_seed: u32) -> Option<String> {
+    if let Some(endpoint) = self.get_healthy_endpoint(index_seed) {
+      return Some(endpoint);
+    }
+    if let Some(endpoint) = self.get_unhealthy_endpoint(index_seed) {
+      return Some(endpoint);
+    }
+    return None;
+  }
+
+  #[inline]
   fn next_healthy_endpoint(&mut self) -> Option<String> {
     let len = self.healthy_endpoints.len();
     if len <= 0 {
@@ -55,6 +71,7 @@ impl EndpointSet {
     }
   }
 
+  #[inline]
   fn next_unhealthy_endpoint(&mut self) -> Option<String> {
     let len = self.unhealthy_endpoints.len();
     if len <= 0 {
@@ -63,6 +80,34 @@ impl EndpointSet {
     let next_index = if self.unhealthy_index < len - 1 { self.unhealthy_index + 1 } else { 0 };
     if let Some(endpoint) = self.unhealthy_endpoints.get_index(next_index) {
       self.unhealthy_index = next_index;
+      return Some(endpoint.clone());
+    } else {
+      return None;
+    }
+  }
+
+  #[inline]
+  fn get_healthy_endpoint(&self, index_seed: u32) -> Option<String> {
+    let len = self.healthy_endpoints.len();
+    if len <= 0 {
+      return None;
+    }
+    let index = (index_seed % len as u32) as usize;
+    if let Some(endpoint) = self.healthy_endpoints.get_index(index) {
+      return Some(endpoint.clone());
+    } else {
+      return None;
+    }
+  }
+
+  #[inline]
+  fn get_unhealthy_endpoint(&self, index_seed: u32) -> Option<String> {
+    let len = self.unhealthy_endpoints.len();
+    if len <= 0 {
+      return None;
+    }
+    let index = (index_seed % len as u32) as usize;
+    if let Some(endpoint) = self.healthy_endpoints.get_index(index) {
       return Some(endpoint.clone());
     } else {
       return None;
@@ -106,21 +151,15 @@ impl RouteTable {
     }
   }
 
+  #[allow(dead_code)]
   #[inline]
   pub fn next_endpoint(&self, path: &String) -> Option<String> {
-    match self.route_groups.entry(path.clone()) {
-      DashEntry::Occupied(mut occupied) => {
-        let route_group = occupied.get_mut();
-        let endpoint = route_group.next_endpoint();
-        if endpoint.is_some() {
-          endpoint
-        } else {
-          occupied.remove();
-          None
-        }
-      }
-      DashEntry::Vacant(_) => None,
-    }
+    self.route_groups.get_mut(path).and_then(|mut route_group| route_group.next_endpoint())
+  }
+
+  #[inline]
+  pub fn get_endpoint(&self, path: &String, index_seed: u32) -> Option<String> {
+    self.route_groups.get(path).and_then(|route_group| route_group.get_endpoint(index_seed))
   }
 }
 

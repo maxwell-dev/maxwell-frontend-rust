@@ -1,11 +1,9 @@
 use std::{
   cell::RefCell,
   future::Future,
+  num::NonZeroUsize,
   rc::Rc,
-  sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-  },
+  sync::atomic::{AtomicU32, Ordering},
   time::Duration,
 };
 
@@ -17,12 +15,12 @@ use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
 use bytes::{Bytes, BytesMut};
 use dashmap::DashMap;
+use lru::LruCache;
 use maxwell_protocol::{self, HandleError, *};
-use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
-use moka_cht::map::HashMap as MokaHashMap;
+use maxwell_utils::prelude::{Arc, EventHandler as MaxwellEventHandler, *};
 use once_cell::sync::Lazy;
 
-use crate::topic_localizer::TopicLocalizer;
+use crate::topic_localizer::TOPIC_LOCALIZER;
 use crate::{config::CONFIG, route_table::ROUTE_TABLE};
 
 static ID_SEED: AtomicU32 = AtomicU32::new(1);
@@ -33,16 +31,19 @@ fn next_id() -> u32 {
 }
 
 #[derive(Debug)]
-struct IdRecipMap(DashMap<u32, Recipient<ProtocolMsg>, AHasher>);
+struct IdRecipMap(DashMap<u32, Arc<Recipient<ProtocolMsg>>, AHasher>);
 
 impl IdRecipMap {
   #[inline]
   pub fn new() -> Self {
-    IdRecipMap(DashMap::with_capacity_and_hasher(1024, AHasher::default()))
+    IdRecipMap(DashMap::with_capacity_and_hasher(
+      CONFIG.handler.id_recip_map_size as usize,
+      AHasher::default(),
+    ))
   }
 
   #[inline]
-  pub fn add(&self, id: u32, recip: Recipient<ProtocolMsg>) {
+  pub fn add(&self, id: u32, recip: Arc<Recipient<ProtocolMsg>>) {
     self.0.insert(id, recip);
   }
 
@@ -52,7 +53,7 @@ impl IdRecipMap {
   }
 
   #[inline]
-  pub fn get(&self, id: u32) -> Option<Recipient<ProtocolMsg>> {
+  pub fn get(&self, id: u32) -> Option<Arc<Recipient<ProtocolMsg>>> {
     if let Some(recip) = self.0.get(&id) {
       Some(recip.clone())
     } else {
@@ -64,34 +65,39 @@ impl IdRecipMap {
 static ID_RECIP_MAP: Lazy<IdRecipMap> = Lazy::new(|| IdRecipMap::new());
 
 pub struct StickyConnectionMgr<C: Connection> {
-  connections: MokaHashMap<String, Arc<Addr<C>>, AHasher>,
+  connections: RefCell<LruCache<String, Arc<Addr<C>>, AHasher>>,
 }
 
 impl<C: Connection> StickyConnectionMgr<C> {
   #[inline]
   pub fn new() -> Self {
-    StickyConnectionMgr { connections: MokaHashMap::with_capacity_and_hasher(8, AHasher::new()) }
+    StickyConnectionMgr {
+      connections: RefCell::new(LruCache::with_hasher(
+        NonZeroUsize::new(CONFIG.handler.connection_cache_size as usize).unwrap(),
+        AHasher::new(),
+      )),
+    }
   }
 
   #[inline]
   pub fn get_or_init(
     &self, key: &String, init_connection: impl FnOnce() -> Result<Arc<Addr<C>>>,
   ) -> Result<Arc<Addr<C>>> {
-    let connection = self.connections.get(key);
-    if let Some(connection) = connection {
-      if connection.connected() {
-        Ok(connection)
-      } else {
-        init_connection().and_then(|connection| {
-          self.connections.insert(key.to_owned(), Arc::clone(&connection));
-          Ok(connection)
-        })
+    match self.connections.try_borrow_mut() {
+      Ok(mut connections) => {
+        if let Some(connection) = connections.get(key) {
+          Ok(connection.clone())
+        } else {
+          init_connection().and_then(|connection| {
+            connections.put(key.to_owned(), Arc::clone(&connection));
+            Ok(connection)
+          })
+        }
       }
-    } else {
-      init_connection().and_then(|connection| {
-        self.connections.insert(key.to_owned(), Arc::clone(&connection));
-        Ok(connection)
-      })
+      Err(err) => {
+        log::warn!("Failed to get connection: err: {:?}", err);
+        init_connection()
+      }
     }
   }
 
@@ -99,27 +105,34 @@ impl<C: Connection> StickyConnectionMgr<C> {
   pub async fn get_or_init_async(
     &self, key: &String, init_connection: impl Future<Output = Result<Arc<Addr<C>>>>,
   ) -> Result<Arc<Addr<C>>> {
-    let connection = self.connections.get(key);
-    if let Some(connection) = connection {
-      if connection.connected() {
-        Ok(connection)
-      } else {
-        init_connection.await.and_then(|connection| {
-          self.connections.insert(key.to_owned(), Arc::clone(&connection));
-          Ok(connection)
-        })
+    match self.connections.try_borrow_mut() {
+      Ok(mut connections) => {
+        if let Some(connection) = connections.get(key) {
+          Ok(connection.clone())
+        } else {
+          init_connection.await.and_then(|connection| {
+            connections.put(key.to_owned(), Arc::clone(&connection));
+            Ok(connection)
+          })
+        }
       }
-    } else {
-      init_connection.await.and_then(|connection| {
-        self.connections.insert(key.to_owned(), Arc::clone(&connection));
-        Ok(connection)
-      })
+      Err(err) => {
+        log::warn!("Failed to get connection: err: {:?}", err);
+        init_connection.await
+      }
     }
   }
 
   #[inline]
   pub fn remove(&self, key: &String) {
-    self.connections.remove(key);
+    match self.connections.try_borrow_mut() {
+      Ok(mut connections) => {
+        connections.pop(key);
+      }
+      Err(err) => {
+        log::warn!("Failed to remove connection: err: {:?}", err);
+      }
+    }
   }
 }
 
@@ -177,6 +190,7 @@ impl MaxwellEventHandler for EventHandler {
 }
 
 impl EventHandler {
+  #[inline]
   pub fn new(endpoint: String) -> Self {
     Self { endpoint, continuous_disconnected_times: AtomicU32::new(0) }
   }
@@ -193,12 +207,12 @@ struct HandlerInner {
   id: u32,
   user_agent: String,
   peer_addr: String,
-  recip: RefCell<Option<Recipient<ProtocolMsg>>>,
   sticky_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
   sticky_connection_mgr2: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
 impl HandlerInner {
+  #[inline]
   pub fn new(req: &HttpRequest) -> Self {
     HandlerInner {
       id: next_id(),
@@ -207,14 +221,9 @@ impl HandlerInner {
         |value| value.to_str().unwrap_or("unknown").to_owned(),
       ),
       peer_addr: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
-      recip: RefCell::new(None),
       sticky_connection_mgr: StickyConnectionMgr::new(),
       sticky_connection_mgr2: StickyConnectionMgr::new(),
     }
-  }
-
-  pub fn set_recip(&self, address: Recipient<ProtocolMsg>) {
-    *self.recip.borrow_mut() = Some(address.clone());
   }
 
   pub async fn handle_external_msg(&self, protocol_msg: ProtocolMsg) -> ProtocolMsg {
@@ -349,12 +358,13 @@ impl HandlerInner {
     }
   }
 
+  #[inline]
   fn get_connection_by_path(
     &self, path: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
     self.sticky_connection_mgr.get_or_init(path, || {
-      if let Some(endpoint) = ROUTE_TABLE.next_endpoint(path) {
-        Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
+      if let Some(endpoint) = ROUTE_TABLE.get_endpoint(path, self.id) {
+        Ok(CONNECTION_POOL.get_or_init_with_index_seed(endpoint.as_str(), self.id, &|endpoint| {
           CallbackStyleConnection::start3(
             endpoint.to_owned(),
             ConnectionOptions::default(),
@@ -367,22 +377,27 @@ impl HandlerInner {
     })
   }
 
+  #[inline]
   async fn get_connection_by_topic(
     &self, topic: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
     self
       .sticky_connection_mgr2
       .get_or_init_async(topic, async {
-        match TopicLocalizer::singleton().locate(topic).await {
-          Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
-            CallbackStyleConnection::start3(
-              endpoint.to_owned(),
-              ConnectionOptions::default(),
-              EventHandler::new(endpoint.clone()),
-            )
-          })),
+        match TOPIC_LOCALIZER.locate(topic).await {
+          Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init_with_index_seed(
+            endpoint.as_str(),
+            self.id,
+            &|endpoint| {
+              CallbackStyleConnection::start3(
+                endpoint.to_owned(),
+                ConnectionOptions::default(),
+                EventHandler::new(endpoint.clone()),
+              )
+            },
+          )),
           Err(err) => {
-            Err(Error::msg(format!("Failed to find endpoint: topic: {:?}, err: {:?}", topic, err)))
+            Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
           }
         }
       })
@@ -398,21 +413,22 @@ pub struct Handler {
 impl Actor for Handler {
   type Context = ws::WebsocketContext<Self>;
 
+  #[inline]
   fn started(&mut self, ctx: &mut Self::Context) {
-    log::info!("Handler actor started: id: {:?}", self.inner.id);
-    let recip = ctx.address().recipient();
-    ID_RECIP_MAP.add(self.inner.id, recip.clone());
-    self.inner.set_recip(recip);
+    log::debug!("Handler actor started: id: {:?}", self.inner.id);
+    ID_RECIP_MAP.add(self.inner.id, Arc::new(ctx.address().recipient()));
   }
 
+  #[inline]
   fn stopping(&mut self, _: &mut Self::Context) -> Running {
-    log::info!("Handler actor stopping: id: {:?}", self.inner.id);
+    log::debug!("Handler actor stopping: id: {:?}", self.inner.id);
     ID_RECIP_MAP.remove(self.inner.id);
     Running::Stop
   }
 
+  #[inline]
   fn stopped(&mut self, _: &mut Self::Context) {
-    log::info!("Handler actor stopped: id: {:?}", self.inner.id);
+    log::debug!("Handler actor stopped: id: {:?}", self.inner.id);
   }
 }
 
@@ -452,16 +468,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
 impl actix::Handler<ProtocolMsg> for Handler {
   type Result = Result<ProtocolMsg, HandleError<ProtocolMsg>>;
 
+  #[inline]
   fn handle(&mut self, protocol_msg: ProtocolMsg, ctx: &mut Self::Context) -> Self::Result {
-    let inner = self.inner.clone();
-    async move { inner.handle_internal_msg(protocol_msg).await }
-      .into_actor(self)
-      .map(move |res, _act, ctx| {
-        if res.is_some() {
-          ctx.binary(maxwell_protocol::encode(&res));
-        }
-      })
-      .spawn(ctx);
+    self.spawn_to_handle_internal_msg(protocol_msg, ctx);
     Ok(ProtocolMsg::None)
   }
 }
@@ -472,6 +481,22 @@ impl Handler {
     Self { inner: Rc::new(HandlerInner::new(req)), buf: BytesMut::new() }
   }
 
+  #[inline(always)]
+  fn spawn_to_handle_internal_msg(
+    &mut self, protocol_msg: ProtocolMsg, ctx: &mut <Self as actix::Actor>::Context,
+  ) {
+    let inner = self.inner.clone();
+    async move { inner.handle_internal_msg(protocol_msg).await }
+      .into_actor(self)
+      .map(move |res, _act, ctx| {
+        if res.is_some() {
+          ctx.binary(maxwell_protocol::encode(&res));
+        }
+      })
+      .spawn(ctx);
+  }
+
+  #[inline(always)]
   fn spawn_to_handle_external_msg(&self, bin: Bytes, ctx: &mut ws::WebsocketContext<Self>) {
     let inner = self.inner.clone();
     async move {

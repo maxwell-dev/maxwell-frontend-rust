@@ -8,7 +8,7 @@ use maxwell_protocol::{self, *};
 use maxwell_utils::prelude::ObservableEvent;
 
 use crate::master_client::MASTER_CLIENT;
-use crate::topic_localizer::TopicLocalizer;
+use crate::topic_localizer::TOPIC_LOCALIZER;
 
 struct TopicCleanerInner {
   checksum: AtomicU32,
@@ -30,7 +30,7 @@ impl TopicCleanerInner {
               rep.checksum,
             );
             self.checksum.store(rep.checksum, Ordering::SeqCst);
-            TopicLocalizer::singleton().clear();
+            TOPIC_LOCALIZER.clear();
           }
         }
         _ => {
