@@ -9,6 +9,7 @@ pub struct Config {
   pub server: ServerConfig,
   pub master_client: MasterClientConfig,
   pub route_syncer: RouteSyncerConfig,
+  pub topic_localizer: TopicLocalizerConfig,
   pub handler: HandlerConfig,
 }
 
@@ -63,6 +64,16 @@ pub struct MasterClientConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RouteSyncerConfig {
+  pub sync_interval: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TopicLocalizerConfig {
+  pub cache_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct HandlerConfig {
   pub id_recip_map_size: u32,
   pub connection_cache_size: u32,
@@ -70,11 +81,6 @@ pub struct HandlerConfig {
   pub max_continuous_disconnected_times: u32,
   pub pull_timeout: u64,
   pub request_timeout: u64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RouteSyncerConfig {
-  pub sync_interval: u64,
 }
 
 impl Config {

@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use anyhow::{Error, Result};
 use maxwell_protocol::{self, *};
+use maxwell_utils::prelude::Arc;
 use once_cell::sync::Lazy;
 use quick_cache::{sync::Cache, Weighter};
 
-use crate::master_client::MASTER_CLIENT;
+use crate::{config::CONFIG, master_client::MASTER_CLIENT};
 
 #[derive(Clone)]
 pub struct EndpointWeighter;
@@ -25,7 +24,13 @@ pub static TOPIC_LOCALIZER: Lazy<TopicLocalizer> = Lazy::new(|| TopicLocalizer::
 impl TopicLocalizer {
   #[inline]
   pub fn new() -> Self {
-    Self { cache: Cache::with_weighter(100000, 100000 * 30, EndpointWeighter) }
+    Self {
+      cache: Cache::with_weighter(
+        CONFIG.topic_localizer.cache_size as usize,
+        CONFIG.topic_localizer.cache_size as u64 * 30,
+        EndpointWeighter,
+      ),
+    }
   }
 
   pub async fn locate(&self, topic: &String) -> Result<Arc<String>> {

@@ -1166,8 +1166,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-protocol"
-version = "0.15.3"
-source = "git+https://github.com/maxwell-dev/maxwell-protocol-rust.git?tag=v0.15.3#0e6d76de109e3ea737c433134e9fe2f4b2496282"
+version = "0.18.0"
+source = "git+https://github.com/maxwell-dev/maxwell-protocol-rust.git?tag=v0.18.0#39a7127901fad248d9dfdd3d26058234794a0b69"
 dependencies = [
  "actix",
  "bytes",
@@ -1177,8 +1177,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.10.5"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.5#790736f332d8ff20ed1d359fbe660ef3b68b0346"
+version = "0.10.8"
+source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.8#e4398470f908b520c6620b5c02c393cfa859d5b3"
 dependencies = [
  "actix",
  "actix-codec",

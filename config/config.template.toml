@@ -13,6 +13,12 @@ workers = 8
 [master_client]
 endpoints = ["localhost:8081"]
 
+[route_syncer]
+sync_interval = 5
+
+[topic_localizer]
+cache_size = 100000
+
 [handler]
 connection_cache_size = 16
 connection_pool_slot_size = 8
@@ -20,6 +26,3 @@ id_recip_map_size = 10000
 max_continuous_disconnected_times = 10
 pull_timeout = 5
 request_timeout = 5
-
-[route_syncer]
-sync_interval = 5
