@@ -11,4 +11,5 @@
 
 .DS_Store
 config.toml
+log4rs.yaml
 log
