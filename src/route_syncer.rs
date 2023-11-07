@@ -46,21 +46,26 @@ impl RouteSyncerInner {
 
   async fn check(&self) -> bool {
     let req = GetRouteDistChecksumReq { r#ref: 0 }.into_enum();
-    log::info!("Getting RouteDistChecksum: req: {:?}", req);
+    log::debug!("Getting RouteDistChecksum: req: {:?}", req);
     match MASTER_CLIENT.send(req).await {
       Ok(rep) => match rep {
         ProtocolMsg::GetRouteDistChecksumRep(rep) => {
-          log::info!("Successfully to get RouteDistChecksum: rep: {:?}", rep);
+          log::debug!("Successfully to get RouteDistChecksum: rep: {:?}", rep);
           let local_checksum = self.checksum.load(Ordering::SeqCst);
           if rep.checksum != local_checksum {
             log::info!(
-              "RouteDistChecksum has changed: local: {:?}, remote: {:?}",
+              "RouteDistChecksum has changed: local: {:?}, remote: {:?}, will get new routes.",
               local_checksum,
               rep.checksum,
             );
             self.checksum.store(rep.checksum, Ordering::SeqCst);
             return true;
           } else {
+            log::debug!(
+              "RouteDistChecksum stays the same: local: {:?}, remote: {:?}, do nothing.",
+              local_checksum,
+              rep.checksum,
+            );
             return false;
           }
         }
@@ -78,7 +83,7 @@ impl RouteSyncerInner {
 
   async fn get(&self) -> bool {
     let req = GetRoutesReq { r#ref: 0 }.into_enum();
-    log::info!("Getting routes: req: {:?}", req);
+    log::debug!("Getting routes: req: {:?}", req);
     match MASTER_CLIENT.send(req).await {
       Ok(rep) => match rep {
         ProtocolMsg::GetRoutesRep(rep) => {

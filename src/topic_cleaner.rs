@@ -17,20 +17,26 @@ struct TopicCleanerInner {
 impl TopicCleanerInner {
   pub async fn check(self: Rc<Self>) {
     let req = GetTopicDistChecksumReq { r#ref: 0 }.into_enum();
-    log::info!("Getting TopicDistChecksum: req: {:?}", req);
+    log::debug!("Getting TopicDistChecksum: req: {:?}", req);
     match MASTER_CLIENT.send(req).await {
       Ok(rep) => match rep {
         ProtocolMsg::GetTopicDistChecksumRep(rep) => {
-          log::info!("Successfully to get TopicDistChecksum: rep: {:?}", rep);
+          log::debug!("Successfully to get TopicDistChecksum: rep: {:?}", rep);
           let local_checksum = self.checksum.load(Ordering::SeqCst);
           if rep.checksum != local_checksum {
             log::info!(
-              "TopicDistChecksum has changed: local: {:?}, remote: {:?}",
+              "TopicDistChecksum has changed: local: {:?}, remote: {:?}, clear cache.",
               local_checksum,
               rep.checksum,
             );
             self.checksum.store(rep.checksum, Ordering::SeqCst);
             TOPIC_LOCALIZER.clear();
+          } else {
+            log::debug!(
+              "TopicDistChecksum stays the same: local: {:?}, remote: {:?}, do nothing.",
+              local_checksum,
+              rep.checksum,
+            );
           }
         }
         _ => {

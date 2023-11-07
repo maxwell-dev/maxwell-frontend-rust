@@ -20,7 +20,7 @@ sync_interval = 5
 cache_size = 100000
 
 [handler]
-connection_cache_size = 16
+connection_cache_size = 32
 connection_pool_slot_size = 8
 id_recip_map_size = 10000
 max_continuous_disconnected_times = 10

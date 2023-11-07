@@ -45,16 +45,16 @@ impl EndpointSet {
     return None;
   }
 
-  #[inline]
-  pub fn get_endpoint(&self, index_seed: u32) -> Option<String> {
-    if let Some(endpoint) = self.get_healthy_endpoint(index_seed) {
-      return Some(endpoint);
-    }
-    if let Some(endpoint) = self.get_unhealthy_endpoint(index_seed) {
-      return Some(endpoint);
-    }
-    return None;
-  }
+  // #[inline]
+  // pub fn get_endpoint(&self, index_seed: u32) -> Option<String> {
+  //   if let Some(endpoint) = self.get_healthy_endpoint(index_seed) {
+  //     return Some(endpoint);
+  //   }
+  //   if let Some(endpoint) = self.get_unhealthy_endpoint(index_seed) {
+  //     return Some(endpoint);
+  //   }
+  //   return None;
+  // }
 
   #[inline]
   fn next_healthy_endpoint(&mut self) -> Option<String> {
@@ -86,33 +86,33 @@ impl EndpointSet {
     }
   }
 
-  #[inline]
-  fn get_healthy_endpoint(&self, index_seed: u32) -> Option<String> {
-    let len = self.healthy_endpoints.len();
-    if len <= 0 {
-      return None;
-    }
-    let index = (index_seed % len as u32) as usize;
-    if let Some(endpoint) = self.healthy_endpoints.get_index(index) {
-      return Some(endpoint.clone());
-    } else {
-      return None;
-    }
-  }
+  // #[inline]
+  // fn get_healthy_endpoint(&self, index_seed: u32) -> Option<String> {
+  //   let len = self.healthy_endpoints.len();
+  //   if len <= 0 {
+  //     return None;
+  //   }
+  //   let index = (index_seed % len as u32) as usize;
+  //   if let Some(endpoint) = self.healthy_endpoints.get_index(index) {
+  //     return Some(endpoint.clone());
+  //   } else {
+  //     return None;
+  //   }
+  // }
 
-  #[inline]
-  fn get_unhealthy_endpoint(&self, index_seed: u32) -> Option<String> {
-    let len = self.unhealthy_endpoints.len();
-    if len <= 0 {
-      return None;
-    }
-    let index = (index_seed % len as u32) as usize;
-    if let Some(endpoint) = self.healthy_endpoints.get_index(index) {
-      return Some(endpoint.clone());
-    } else {
-      return None;
-    }
-  }
+  // #[inline]
+  // fn get_unhealthy_endpoint(&self, index_seed: u32) -> Option<String> {
+  //   let len = self.unhealthy_endpoints.len();
+  //   if len <= 0 {
+  //     return None;
+  //   }
+  //   let index = (index_seed % len as u32) as usize;
+  //   if let Some(endpoint) = self.unhealthy_endpoints.get_index(index) {
+  //     return Some(endpoint.clone());
+  //   } else {
+  //     return None;
+  //   }
+  // }
 }
 
 #[derive(Debug)]
@@ -157,10 +157,10 @@ impl RouteTable {
     self.route_groups.get_mut(path).and_then(|mut route_group| route_group.next_endpoint())
   }
 
-  #[inline]
-  pub fn get_endpoint(&self, path: &String, index_seed: u32) -> Option<String> {
-    self.route_groups.get(path).and_then(|route_group| route_group.get_endpoint(index_seed))
-  }
+  // #[inline]
+  // pub fn get_endpoint(&self, path: &String, index_seed: u32) -> Option<String> {
+  //   self.route_groups.get(path).and_then(|route_group| route_group.get_endpoint(index_seed))
+  // }
 }
 
 pub static ROUTE_TABLE: Lazy<RouteTable> = Lazy::new(|| RouteTable::new());

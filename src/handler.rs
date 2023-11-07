@@ -86,13 +86,14 @@ impl<C: Connection> StickyConnectionMgr<C> {
     match self.connections.try_borrow_mut() {
       Ok(mut connections) => {
         if let Some(connection) = connections.get(key) {
-          Ok(connection.clone())
-        } else {
-          init_connection().and_then(|connection| {
-            connections.put(key.to_owned(), Arc::clone(&connection));
-            Ok(connection)
-          })
+          if connection.connected() {
+            return Ok(connection.clone());
+          }
         }
+        return init_connection().and_then(|connection| {
+          connections.put(key.to_owned(), Arc::clone(&connection));
+          Ok(connection)
+        });
       }
       Err(err) => {
         log::warn!("Failed to get connection: err: {:?}", err);
@@ -108,13 +109,14 @@ impl<C: Connection> StickyConnectionMgr<C> {
     match self.connections.try_borrow_mut() {
       Ok(mut connections) => {
         if let Some(connection) = connections.get(key) {
-          Ok(connection.clone())
-        } else {
-          init_connection.await.and_then(|connection| {
-            connections.put(key.to_owned(), Arc::clone(&connection));
-            Ok(connection)
-          })
+          if connection.connected() {
+            return Ok(connection.clone());
+          }
         }
+        return init_connection.await.and_then(|connection| {
+          connections.put(key.to_owned(), Arc::clone(&connection));
+          Ok(connection)
+        });
       }
       Err(err) => {
         log::warn!("Failed to get connection: err: {:?}", err);
@@ -349,12 +351,15 @@ impl HandlerInner {
         }
         protocol_msg
       }
-      _ => maxwell_protocol::ErrorRep {
-        code: ErrorCode::UnknownMsg as i32,
-        desc: format!("Received unknown msg: {:?}", protocol_msg),
-        r#ref: get_ref(&protocol_msg),
+      _ => {
+        log::error!("Received unknown msg: {:?}", protocol_msg);
+        maxwell_protocol::ErrorRep {
+          code: ErrorCode::UnknownMsg as i32,
+          desc: format!("Received unknown msg: {:?}", protocol_msg),
+          r#ref: get_ref(&protocol_msg),
+        }
+        .into_enum()
       }
-      .into_enum(),
     }
   }
 
@@ -363,8 +368,8 @@ impl HandlerInner {
     &self, path: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
     self.sticky_connection_mgr.get_or_init(path, || {
-      if let Some(endpoint) = ROUTE_TABLE.get_endpoint(path, self.id) {
-        Ok(CONNECTION_POOL.get_or_init_with_index_seed(endpoint.as_str(), self.id, &|endpoint| {
+      if let Some(endpoint) = ROUTE_TABLE.next_endpoint(path) {
+        Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
           CallbackStyleConnection::start3(
             endpoint.to_owned(),
             ConnectionOptions::default(),
