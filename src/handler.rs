@@ -1,7 +1,5 @@
 use std::{
-  cell::RefCell,
   future::Future,
-  num::NonZeroUsize,
   rc::Rc,
   sync::atomic::{AtomicU32, Ordering},
   time::Duration,
@@ -15,9 +13,10 @@ use ahash::RandomState as AHasher;
 use anyhow::{Error, Result};
 use bytes::{Bytes, BytesMut};
 use dashmap::DashMap;
-use lru::LruCache;
 use maxwell_protocol::{self, HandleError, *};
 use maxwell_utils::prelude::{Arc, EventHandler as MaxwellEventHandler, *};
+use moka::future::Cache as AsyncCache;
+use moka::sync::Cache;
 use once_cell::sync::Lazy;
 
 use crate::topic_localizer::TOPIC_LOCALIZER;
@@ -65,17 +64,17 @@ impl IdRecipMap {
 static ID_RECIP_MAP: Lazy<IdRecipMap> = Lazy::new(|| IdRecipMap::new());
 
 pub struct StickyConnectionMgr<C: Connection> {
-  connections: RefCell<LruCache<String, Arc<Addr<C>>, AHasher>>,
+  connections: Cache<String, Arc<Addr<C>>, AHasher>,
 }
 
 impl<C: Connection> StickyConnectionMgr<C> {
   #[inline]
   pub fn new() -> Self {
     StickyConnectionMgr {
-      connections: RefCell::new(LruCache::with_hasher(
-        NonZeroUsize::new(CONFIG.handler.connection_cache_size as usize).unwrap(),
-        AHasher::new(),
-      )),
+      connections: Cache::builder()
+        .initial_capacity(8)
+        .max_capacity(CONFIG.handler.connection_cache_size as u64)
+        .build_with_hasher(AHasher::new()),
     }
   }
 
@@ -83,22 +82,30 @@ impl<C: Connection> StickyConnectionMgr<C> {
   pub fn get_or_init(
     &self, key: &String, init_connection: impl FnOnce() -> Result<Arc<Addr<C>>>,
   ) -> Result<Arc<Addr<C>>> {
-    match self.connections.try_borrow_mut() {
-      Ok(mut connections) => {
-        if let Some(connection) = connections.get(key) {
-          if connection.connected() {
-            return Ok(connection.clone());
-          }
-        }
-        return init_connection().and_then(|connection| {
-          connections.put(key.to_owned(), Arc::clone(&connection));
-          Ok(connection)
-        });
-      }
-      Err(err) => {
-        log::warn!("Failed to get connection: err: {:?}", err);
-        init_connection()
-      }
+    self
+      .connections
+      .try_get_with_by_ref(key, init_connection)
+      .or_else(|err| Err(Error::msg(format!("{}", err))))
+  }
+
+  #[inline]
+  pub fn remove(&self, key: &String) {
+    self.connections.invalidate(key);
+  }
+}
+
+pub struct AsyncStickyConnectionMgr<C: Connection> {
+  connections: AsyncCache<String, Arc<Addr<C>>, AHasher>,
+}
+
+impl<C: Connection> AsyncStickyConnectionMgr<C> {
+  #[inline]
+  pub fn new() -> Self {
+    AsyncStickyConnectionMgr {
+      connections: AsyncCache::builder()
+        .initial_capacity(8)
+        .max_capacity(CONFIG.handler.connection_cache_size as u64)
+        .build_with_hasher(AHasher::new()),
     }
   }
 
@@ -106,35 +113,16 @@ impl<C: Connection> StickyConnectionMgr<C> {
   pub async fn get_or_init_async(
     &self, key: &String, init_connection: impl Future<Output = Result<Arc<Addr<C>>>>,
   ) -> Result<Arc<Addr<C>>> {
-    match self.connections.try_borrow_mut() {
-      Ok(mut connections) => {
-        if let Some(connection) = connections.get(key) {
-          if connection.connected() {
-            return Ok(connection.clone());
-          }
-        }
-        return init_connection.await.and_then(|connection| {
-          connections.put(key.to_owned(), Arc::clone(&connection));
-          Ok(connection)
-        });
-      }
-      Err(err) => {
-        log::warn!("Failed to get connection: err: {:?}", err);
-        init_connection.await
-      }
-    }
+    self
+      .connections
+      .try_get_with_by_ref(key, async { init_connection.await })
+      .await
+      .or_else(|err| Err(Error::msg(format!("{}", err))))
   }
 
   #[inline]
-  pub fn remove(&self, key: &String) {
-    match self.connections.try_borrow_mut() {
-      Ok(mut connections) => {
-        connections.pop(key);
-      }
-      Err(err) => {
-        log::warn!("Failed to remove connection: err: {:?}", err);
-      }
-    }
+  pub async fn remove(&self, key: &String) {
+    self.connections.invalidate(key).await;
   }
 }
 
@@ -209,8 +197,8 @@ struct HandlerInner {
   id: u32,
   user_agent: String,
   peer_addr: String,
-  sticky_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
-  sticky_connection_mgr2: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
+  service_connection_mgr: StickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
+  backend_connection_mgr: AsyncStickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
 impl HandlerInner {
@@ -223,8 +211,8 @@ impl HandlerInner {
         |value| value.to_str().unwrap_or("unknown").to_owned(),
       ),
       peer_addr: req.peer_addr().map_or_else(|| "0.0.0.0".to_owned(), |value| value.to_string()),
-      sticky_connection_mgr: StickyConnectionMgr::new(),
-      sticky_connection_mgr2: StickyConnectionMgr::new(),
+      service_connection_mgr: StickyConnectionMgr::new(),
+      backend_connection_mgr: AsyncStickyConnectionMgr::new(),
     }
   }
 
@@ -260,7 +248,7 @@ impl HandlerInner {
                 if let HandleError::Any { msg, .. } = err {
                   let req = &ReqReq::from(msg);
                   log::warn!("Removing sticky connection: path: {:?}", req.path);
-                  self.sticky_connection_mgr.remove(&req.path)
+                  self.service_connection_mgr.remove(&req.path)
                 }
                 rep
               }
@@ -301,7 +289,7 @@ impl HandlerInner {
                 if let HandleError::Any { msg, .. } = err {
                   let req = PullReq::from(msg);
                   log::warn!("Removing sticky connection: topic: {:?}", req.topic);
-                  self.sticky_connection_mgr2.remove(&req.topic)
+                  self.backend_connection_mgr.remove(&req.topic).await
                 }
                 rep
               }
@@ -340,13 +328,13 @@ impl HandlerInner {
           if let Some((_, path)) = err.desc.split_once(':') {
             let path = path.trim().to_owned();
             log::warn!("Removing sticky connection: path: {:?}", path);
-            self.sticky_connection_mgr.remove(&path);
+            self.service_connection_mgr.remove(&path);
           }
         } else if err.code == ErrorCode::UnknownTopic as i32 {
           if let Some((_, topic)) = err.desc.split_once(':') {
             let topic = topic.trim().to_owned();
             log::warn!("Removing sticky connection: topic: {:?}", topic);
-            self.sticky_connection_mgr2.remove(&topic);
+            self.backend_connection_mgr.remove(&topic).await;
           }
         }
         protocol_msg
@@ -367,46 +355,72 @@ impl HandlerInner {
   fn get_connection_by_path(
     &self, path: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
-    self.sticky_connection_mgr.get_or_init(path, || {
-      if let Some(endpoint) = ROUTE_TABLE.next_endpoint(path) {
-        Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
-          CallbackStyleConnection::start3(
-            endpoint.to_owned(),
-            ConnectionOptions::default(),
-            EventHandler::new(endpoint.clone()),
-          )
-        }))
-      } else {
-        Err(Error::msg(format!("Failed to find endpoint: path: {:?}", path)))
+    loop {
+      let result = self.service_connection_mgr.get_or_init(path, || {
+        if let Some(endpoint) = ROUTE_TABLE.next_endpoint(path) {
+          Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
+            CallbackStyleConnection::start3(
+              endpoint.to_owned(),
+              ConnectionOptions::default(),
+              EventHandler::new(endpoint.clone()),
+            )
+          }))
+        } else {
+          Err(Error::msg(format!("Failed to find endpoint: path: {:?}", path)))
+        }
+      });
+      match result {
+        Ok(connection) => {
+          if connection.connected() {
+            return Ok(connection);
+          } else {
+            log::warn!("The returned connection is broken, retry again: path: {:?}", path);
+            self.service_connection_mgr.remove(path);
+          }
+        }
+        Err(err) => return Err(err),
       }
-    })
+    }
   }
 
   #[inline]
   async fn get_connection_by_topic(
     &self, topic: &String,
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
-    self
-      .sticky_connection_mgr2
-      .get_or_init_async(topic, async {
-        match TOPIC_LOCALIZER.locate(topic).await {
-          Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init_with_index_seed(
-            endpoint.as_str(),
-            self.id,
-            &|endpoint| {
-              CallbackStyleConnection::start3(
-                endpoint.to_owned(),
-                ConnectionOptions::default(),
-                EventHandler::new(endpoint.clone()),
-              )
-            },
-          )),
-          Err(err) => {
-            Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
+    loop {
+      let result = self
+        .backend_connection_mgr
+        .get_or_init_async(topic, async {
+          match TOPIC_LOCALIZER.locate(topic).await {
+            Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init_with_index_seed(
+              endpoint.as_str(),
+              self.id,
+              &|endpoint| {
+                CallbackStyleConnection::start3(
+                  endpoint.to_owned(),
+                  ConnectionOptions::default(),
+                  EventHandler::new(endpoint.clone()),
+                )
+              },
+            )),
+            Err(err) => {
+              Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
+            }
+          }
+        })
+        .await;
+      match result {
+        Ok(connection) => {
+          if connection.connected() {
+            return Ok(connection);
+          } else {
+            log::warn!("The returned connection is broken, retry again: topic: {:?}", topic);
+            self.backend_connection_mgr.remove(topic).await;
           }
         }
-      })
-      .await
+        Err(err) => return Err(err),
+      }
+    }
   }
 }
 
