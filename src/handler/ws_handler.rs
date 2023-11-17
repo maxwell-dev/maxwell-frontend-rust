@@ -18,6 +18,7 @@ use maxwell_utils::prelude::{Arc, EventHandler as MaxwellEventHandler, *};
 use moka::future::Cache as AsyncCache;
 use moka::sync::Cache;
 use once_cell::sync::Lazy;
+use quanta::Instant;
 
 use crate::topic_localizer::TOPIC_LOCALIZER;
 use crate::{config::CONFIG, route_table::ROUTE_TABLE};
@@ -110,7 +111,7 @@ impl<C: Connection> AsyncStickyConnectionMgr<C> {
   }
 
   #[inline]
-  pub async fn get_or_init_async(
+  pub async fn get_or_init(
     &self, key: &String, init_connection: impl Future<Output = Result<Arc<Addr<C>>>>,
   ) -> Result<Arc<Addr<C>>> {
     self
@@ -193,7 +194,7 @@ static CONNECTION_POOL: Lazy<Arc<ConnectionPool<CallbackStyleConnection<EventHan
     }))
   });
 
-struct HandlerInner {
+struct WsHandlerInner {
   id: u32,
   user_agent: String,
   peer_addr: String,
@@ -201,10 +202,10 @@ struct HandlerInner {
   backend_connection_mgr: AsyncStickyConnectionMgr<CallbackStyleConnection<EventHandler>>,
 }
 
-impl HandlerInner {
+impl WsHandlerInner {
   #[inline]
   pub fn new(req: &HttpRequest) -> Self {
-    HandlerInner {
+    WsHandlerInner {
       id: next_id(),
       user_agent: req.headers().get(header::USER_AGENT).map_or_else(
         || "unknown".to_owned(),
@@ -390,7 +391,7 @@ impl HandlerInner {
     loop {
       let result = self
         .backend_connection_mgr
-        .get_or_init_async(topic, async {
+        .get_or_init(topic, async {
           match TOPIC_LOCALIZER.locate(topic).await {
             Ok(endpoint) => Ok(CONNECTION_POOL.get_or_init_with_index_seed(
               endpoint.as_str(),
@@ -424,18 +425,30 @@ impl HandlerInner {
   }
 }
 
-pub struct Handler {
-  inner: Rc<HandlerInner>,
-  buf: BytesMut,
+pub struct WsHandler {
+  inner: Rc<WsHandlerInner>,
+  receive_buf: BytesMut,
+  active_at: Instant,
 }
 
-impl Actor for Handler {
+impl Actor for WsHandler {
   type Context = ws::WebsocketContext<Self>;
 
   #[inline]
   fn started(&mut self, ctx: &mut Self::Context) {
     log::debug!("Handler actor started: id: {:?}", self.inner.id);
     ID_RECIP_MAP.add(self.inner.id, Arc::new(ctx.address().recipient()));
+    ctx.run_interval(
+      Duration::from_secs(CONFIG.handler.client_check_interval as u64),
+      |act, ctx| {
+        log::debug!("Checking alive for handler actor: id: {:?}", act.inner.id);
+        if act.active_at.elapsed() > Duration::from_secs(CONFIG.handler.client_idle_timeout as u64)
+        {
+          log::info!("Handler actor met idle timeout: id: {:?}", act.inner.id);
+          ctx.stop();
+        }
+      },
+    );
   }
 
   #[inline]
@@ -451,8 +464,9 @@ impl Actor for Handler {
   }
 }
 
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsHandler {
   fn handle(&mut self, ws_msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+    self.active_at = Instant::recent();
     match ws_msg {
       Ok(ws::Message::Ping(ws_msg)) => {
         ctx.pong(&ws_msg);
@@ -464,14 +478,14 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
           log::error!("Received invalid continuation item: {:?}", data)
         }
         Item::FirstBinary(data) => {
-          self.buf.extend_from_slice(&data);
+          self.receive_buf.extend_from_slice(&data);
         }
         Item::Continue(data) => {
-          self.buf.extend_from_slice(&data);
+          self.receive_buf.extend_from_slice(&data);
         }
         Item::Last(data) => {
-          self.buf.extend_from_slice(&data);
-          let buf = std::mem::replace(&mut self.buf, BytesMut::new());
+          self.receive_buf.extend_from_slice(&data);
+          let buf = std::mem::replace(&mut self.receive_buf, BytesMut::new());
           self.spawn_to_handle_external_msg(buf.freeze(), ctx);
         }
       },
@@ -484,7 +498,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Handler {
   }
 }
 
-impl actix::Handler<ProtocolMsg> for Handler {
+impl actix::Handler<ProtocolMsg> for WsHandler {
   type Result = Result<ProtocolMsg, HandleError<ProtocolMsg>>;
 
   #[inline]
@@ -494,10 +508,14 @@ impl actix::Handler<ProtocolMsg> for Handler {
   }
 }
 
-impl Handler {
+impl WsHandler {
   #[inline]
   pub fn new(req: &HttpRequest) -> Self {
-    Self { inner: Rc::new(HandlerInner::new(req)), buf: BytesMut::new() }
+    Self {
+      inner: Rc::new(WsHandlerInner::new(req)),
+      receive_buf: BytesMut::new(),
+      active_at: Instant::now(),
+    }
   }
 
   #[inline(always)]

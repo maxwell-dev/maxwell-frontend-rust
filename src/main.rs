@@ -13,7 +13,11 @@ mod topic_localizer;
 use std::{fs::File, io::BufReader};
 
 use actix::prelude::*;
-use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_cors::Cors;
+use actix_web::{
+  error::ErrorInternalServerError, middleware, web, App, Error, HttpRequest, HttpResponse,
+  HttpServer,
+};
 use actix_web_actors::ws;
 use anyhow::{anyhow, Result};
 use futures::future;
@@ -23,19 +27,33 @@ use rustls_pemfile::{certs, pkcs8_private_keys};
 use topic_cleaner::TopicCleaner;
 
 use crate::config::CONFIG;
-use crate::handler::Handler;
+use crate::handler::{HttpHandler, WsHandler};
 use crate::registrar::Registrar;
 
 async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
-  let resp = ws::WsResponseBuilder::new(Handler::new(&req), &req, stream)
+  let resp = ws::WsResponseBuilder::new(WsHandler::new(&req), &req, stream)
     .frame_size(CONFIG.server.max_frame_size)
     .start();
+  log::info!("ws req: {:?}, resp: {:?}", req, resp);
+  resp
+}
+
+async fn get(req: HttpRequest) -> Result<HttpResponse, Error> {
+  let resp = HttpHandler::handle_get(&req).await.or_else(|err| Err(ErrorInternalServerError(err)));
+  log::info!("http req: {:?}, resp: {:?}", req, resp);
+  resp
+}
+
+async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
+  let resp =
+    HttpHandler::handle_request(&req, body).await.or_else(|err| Err(ErrorInternalServerError(err)));
   log::info!("http req: {:?}, resp: {:?}", req, resp);
   resp
 }
 
 #[actix_web::main]
 async fn main() -> Result<()> {
+  // console_subscriber::init();
   log4rs::init_file("config/log4rs.yaml", Default::default())?;
 
   Registrar::new().start();
@@ -48,7 +66,21 @@ async fn main() -> Result<()> {
 
 async fn create_http_server(is_https: bool) -> Result<()> {
   let http_server = HttpServer::new(move || {
-    App::new().wrap(middleware::Logger::default()).route("/$ws", web::get().to(ws))
+    App::new()
+      .wrap(middleware::Logger::default())
+      .wrap(middleware::Compress::default())
+      .wrap(
+        Cors::default()
+          .allow_any_header()
+          .allow_any_origin()
+          .send_wildcard()
+          .block_on_origin_mismatch(false)
+          .expose_any_header()
+          .max_age(None),
+      )
+      .route("/$ws", web::get().to(ws))
+      .route("/{pnq:.*}", web::get().to(get))
+      .route("/{pnq:.*}", web::route().to(other))
   })
   .backlog(CONFIG.server.backlog)
   .keep_alive(CONFIG.server.keep_alive)

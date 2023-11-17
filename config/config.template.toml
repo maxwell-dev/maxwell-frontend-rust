@@ -20,6 +20,8 @@ sync_interval = 5
 cache_size = 100000
 
 [handler]
+client_check_interval = 10
+client_idle_timeout = 120
 connection_cache_size = 32
 connection_pool_slot_size = 8
 id_recip_map_size = 10000

@@ -81,6 +81,8 @@ pub struct HandlerConfig {
   pub max_continuous_disconnected_times: u32,
   pub pull_timeout: u64,
   pub request_timeout: u64,
+  pub client_check_interval: u32,
+  pub client_idle_timeout: u32,
 }
 
 impl Config {
