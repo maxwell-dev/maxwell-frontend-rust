@@ -30,6 +30,9 @@ use crate::config::CONFIG;
 use crate::handler::{HttpHandler, WsHandler};
 use crate::registrar::Registrar;
 
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
   let resp = ws::WsResponseBuilder::new(WsHandler::new(&req), &req, stream)
     .frame_size(CONFIG.server.max_frame_size)
