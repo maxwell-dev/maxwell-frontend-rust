@@ -1367,8 +1367,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.10.11"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.11#f3c389246557b86396fc54ff72aa3883e44a14af"
+version = "0.10.12"
+source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.12#c4585b4b1acee36208d3f2ecbf6fae31b89b7d59"
 dependencies = [
  "actix",
  "actix-codec",
@@ -1387,7 +1387,6 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "tokio",
- "triomphe",
 ]
 
 [[package]]
@@ -2230,12 +2229,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
-name = "stable_deref_trait"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
-
-[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2496,10 +2489,6 @@ name = "triomphe"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eee8098afad3fb0c54a9007aab6804558410503ad676d4633f9c2559a00ac0f"
-dependencies = [
- "serde",
- "stable_deref_trait",
-]
 
 [[package]]
 name = "try-lock"

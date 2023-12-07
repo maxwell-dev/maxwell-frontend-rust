@@ -1,7 +1,10 @@
 use std::{
   future::Future,
   rc::Rc,
-  sync::atomic::{AtomicU32, Ordering},
+  sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+  },
   time::Duration,
 };
 
@@ -14,7 +17,7 @@ use anyhow::{Error, Result};
 use bytes::{Bytes, BytesMut};
 use dashmap::DashMap;
 use maxwell_protocol::{self, HandleError, *};
-use maxwell_utils::prelude::{Arc, EventHandler as MaxwellEventHandler, *};
+use maxwell_utils::prelude::{EventHandler as MaxwellEventHandler, *};
 use moka::future::Cache as AsyncCache;
 use moka::sync::Cache;
 use once_cell::sync::Lazy;

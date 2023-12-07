@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use maxwell_protocol::{self, *};
-use maxwell_utils::prelude::Arc;
 use once_cell::sync::Lazy;
 use quick_cache::{sync::Cache, Weighter};
 
