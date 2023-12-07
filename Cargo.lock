@@ -1367,8 +1367,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.10.12"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.12#c4585b4b1acee36208d3f2ecbf6fae31b89b7d59"
+version = "0.10.13"
+source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.13#fb4658565d4b0c73cc0f1cb8fa445c925d900a44"
 dependencies = [
  "actix",
  "actix-codec",
