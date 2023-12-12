@@ -1354,8 +1354,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.10.21"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.21#c3a3e5f39d968bf4433daf2f3a65dd5243f570b5"
+version = "0.10.23"
+source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.23#b21dd298be12670833f26d89e5eb5c4a4b055e1b"
 dependencies = [
  "actix",
  "ahash 0.8.6",

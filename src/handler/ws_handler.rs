@@ -431,6 +431,8 @@ impl WsHandlerInner {
 pub struct WsHandler {
   inner: Rc<WsHandlerInner>,
   receive_buf: BytesMut,
+  received_last: bool,
+  check_timer: SpawnHandle,
   active_at: Instant,
 }
 
@@ -455,9 +457,11 @@ impl Actor for WsHandler {
   }
 
   #[inline]
-  fn stopping(&mut self, _: &mut Self::Context) -> Running {
+  fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
     log::debug!("Handler actor stopping: id: {:?}", self.inner.id);
     ID_RECIP_MAP.remove(self.inner.id);
+    ctx.cancel_future(self.check_timer);
+    self.receive_buf = BytesMut::new();
     Running::Stop
   }
 
@@ -478,21 +482,48 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsHandler {
       Ok(ws::Message::Binary(bin)) => self.spawn_to_handle_external_msg(bin, ctx),
       Ok(ws::Message::Continuation(cont)) => match cont {
         Item::FirstText(data) => {
-          log::error!("Received invalid continuation item: {:?}", data)
+          log::error!("Received invalid continuation item: {:?}", data);
+          ctx.stop();
         }
         Item::FirstBinary(data) => {
+          ctx.cancel_future(self.check_timer);
+          self.received_last = false;
+          self.receive_buf = BytesMut::with_capacity(data.len() * 3);
           self.receive_buf.extend_from_slice(&data);
+          self.check_timer = ctx.run_later(Duration::from_secs(5), |act, _ctx| {
+            if !act.received_last {
+              log::warn!("Timeout to receive the last item, reset the buffer.");
+              act.receive_buf = BytesMut::new();
+            }
+          });
         }
         Item::Continue(data) => {
-          self.receive_buf.extend_from_slice(&data);
+          let wanted_len = self.receive_buf.len() + data.len();
+          if wanted_len > CONFIG.server.max_frame_size {
+            log::error!("Received too large msg: len: {}", wanted_len);
+            ctx.stop();
+          } else {
+            self.receive_buf.extend_from_slice(&data);
+          }
         }
         Item::Last(data) => {
-          self.receive_buf.extend_from_slice(&data);
-          let buf = std::mem::replace(&mut self.receive_buf, BytesMut::new());
-          self.spawn_to_handle_external_msg(buf.freeze(), ctx);
+          ctx.cancel_future(self.check_timer);
+          self.received_last = true;
+          let wanted_len = self.receive_buf.len() + data.len();
+          if wanted_len > CONFIG.server.max_frame_size {
+            log::error!("Received too large msg: len: {}", wanted_len);
+            ctx.stop();
+          } else {
+            self.receive_buf.extend_from_slice(&data);
+          }
+          let receive_buf = std::mem::replace(&mut self.receive_buf, BytesMut::new());
+          self.spawn_to_handle_external_msg(receive_buf.freeze(), ctx);
         }
       },
-      Ok(ws::Message::Close(_)) => ctx.stop(),
+      Ok(ws::Message::Close(reason)) => {
+        log::info!("Received close msg: reason: {:?}", reason);
+        ctx.stop();
+      }
       _ => {
         log::error!("Received unknown msg: {:?}", ws_msg);
         ctx.stop();
@@ -517,6 +548,8 @@ impl WsHandler {
     Self {
       inner: Rc::new(WsHandlerInner::new(req)),
       receive_buf: BytesMut::new(),
+      received_last: false,
+      check_timer: SpawnHandle::default(),
       active_at: Instant::now(),
     }
   }

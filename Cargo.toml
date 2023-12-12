@@ -34,7 +34,7 @@ serde = "1.0.193"
 serde_derive = "1.0.193"
 
 maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.21.0"}
-maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.10.21"}
+maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.10.23"}
 
 # console-subscriber = "0.2.0"
 tikv-jemallocator = {version = "0.5.4", features = ["profiling"]}
