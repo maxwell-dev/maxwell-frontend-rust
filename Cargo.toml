@@ -37,7 +37,7 @@ maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.
 maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.10.23"}
 
 # console-subscriber = "0.2.0"
-# tikv-jemallocator = {version = "0.5.4", features = ["profiling"]}
+tikv-jemallocator = {version = "0.5.4", features = ["profiling"]}
 
-# [profile.release]
-# debug = true
+[profile.release]
+debug = true
