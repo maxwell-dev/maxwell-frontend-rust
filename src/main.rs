@@ -56,7 +56,6 @@ async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Err
 
 #[actix_web::main]
 async fn main() -> Result<()> {
-  // console_subscriber::init();
   log4rs::init_file("config/log4rs.yaml", Default::default())?;
 
   Registrar::new().start();
