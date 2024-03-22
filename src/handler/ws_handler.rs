@@ -13,7 +13,7 @@ use actix_http::{header, ws::Item};
 use actix_web::HttpRequest;
 use actix_web_actors::ws;
 use ahash::RandomState as AHasher;
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Result};
 use bytes::{Bytes, BytesMut};
 use dashmap::DashMap;
 use maxwell_protocol::{self, HandleError, *};
@@ -89,7 +89,7 @@ impl<C: Connection> StickyConnectionMgr<C> {
     self
       .connections
       .try_get_with_by_ref(key, init_connection)
-      .or_else(|err| Err(Error::msg(format!("{}", err))))
+      .or_else(|err| Err(anyhow!(format!("{}", err))))
   }
 
   #[inline]
@@ -121,7 +121,7 @@ impl<C: Connection> AsyncStickyConnectionMgr<C> {
       .connections
       .try_get_with_by_ref(key, async { init_connection.await })
       .await
-      .or_else(|err| Err(Error::msg(format!("{}", err))))
+      .or_else(|err| Err(anyhow!(format!("{}", err))))
   }
 
   #[inline]
@@ -361,7 +361,7 @@ impl WsHandlerInner {
   ) -> Result<Arc<Addr<CallbackStyleConnection<EventHandler>>>> {
     loop {
       let result = self.service_connection_mgr.get_or_init(path, || {
-        if let Some(endpoint) = ROUTE_TABLE.next_endpoint(path) {
+        if let Some(endpoint) = ROUTE_TABLE.next_ws_endpoint(path) {
           Ok(CONNECTION_POOL.get_or_init(endpoint.as_str(), &|endpoint| {
             CallbackStyleConnection::start3(
               endpoint.to_owned(),
@@ -370,7 +370,7 @@ impl WsHandlerInner {
             )
           }))
         } else {
-          Err(Error::msg(format!("Failed to find endpoint: path: {:?}", path)))
+          Err(anyhow!(format!("Failed to find endpoint: path: {:?}", path)))
         }
       });
       match result {
@@ -408,7 +408,7 @@ impl WsHandlerInner {
               },
             )),
             Err(err) => {
-              Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
+              Err(anyhow!(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
             }
           }
         })

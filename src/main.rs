@@ -15,8 +15,9 @@ use std::{fs::File, io::BufReader};
 use actix::prelude::*;
 use actix_cors::Cors;
 use actix_web::{
-  error::ErrorInternalServerError, middleware, web, App, Error, HttpRequest, HttpResponse,
-  HttpServer,
+  error::ErrorInternalServerError,
+  middleware::{Compress, Logger as ActixLogger, NormalizePath, TrailingSlash},
+  web, App, Error as ActixError, HttpRequest, HttpResponse, HttpServer,
 };
 use actix_web_actors::ws;
 use anyhow::{anyhow, Result};
@@ -33,30 +34,45 @@ use crate::registrar::Registrar;
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
   let resp = ws::WsResponseBuilder::new(WsHandler::new(&req), &req, stream)
     .frame_size(CONFIG.server.max_frame_size)
     .start();
-  log::info!("ws req: {:?}, resp: {:?}", req, resp);
+  match &resp {
+    Ok(resp) => log::debug!("ws req: {:?}, ws resp: {:?}", req, resp),
+    Err(err) => log::error!("err: {}, ws req: {:?}", err, req),
+  }
   resp
 }
 
-async fn get(req: HttpRequest) -> Result<HttpResponse, Error> {
+async fn get(req: HttpRequest) -> Result<HttpResponse, ActixError> {
   let resp = HttpHandler::handle_get(&req).await.or_else(|err| Err(ErrorInternalServerError(err)));
-  log::info!("http req: {:?}, resp: {:?}", req, resp);
+  match &resp {
+    Ok(resp) => log::debug!("http req: {:?}, http resp: {:?}", req, resp),
+    Err(err) => log::error!("err: {}, http req: {:?}", err, req),
+  }
   resp
 }
 
-async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
+async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, ActixError> {
   let resp =
     HttpHandler::handle_request(&req, body).await.or_else(|err| Err(ErrorInternalServerError(err)));
-  log::info!("http req: {:?}, resp: {:?}", req, resp);
+  match &resp {
+    Ok(resp) => log::debug!("http req: {:?}, resp: {:?}", req, resp),
+    Err(err) => log::error!("err: {}, http req: {:?}", err, req),
+  }
   resp
 }
 
 #[actix_web::main]
 async fn main() -> Result<()> {
   log4rs::init_file("config/log4rs.yaml", Default::default())?;
+
+  use matchit::Router;
+
+  let mut m = Router::new();
+  m.insert("/static/{*p}", true)?;
+  log::info!("{:?}", m.at("/static/"));
 
   Registrar::new().start();
   RouteSyncer::new().start();
@@ -69,8 +85,8 @@ async fn main() -> Result<()> {
 async fn create_http_server(is_https: bool) -> Result<()> {
   let http_server = HttpServer::new(move || {
     App::new()
-      .wrap(middleware::Logger::default())
-      .wrap(middleware::Compress::default())
+      .wrap(ActixLogger::default())
+      .wrap(Compress::default())
       .wrap(
         Cors::default()
           .allow_any_header()
@@ -80,6 +96,7 @@ async fn create_http_server(is_https: bool) -> Result<()> {
           .expose_any_header()
           .max_age(None),
       )
+      .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
       .route("/$ws", web::get().to(ws))
       .route("/{pnq:.*}", web::get().to(get))
       .route("/{pnq:.*}", web::route().to(other))

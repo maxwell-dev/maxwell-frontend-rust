@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Result};
 use maxwell_protocol::{self, *};
 use once_cell::sync::Lazy;
 use quick_cache::{sync::Cache, Weighter};
@@ -45,11 +45,11 @@ impl TopicLocalizer {
           Ok(rep) => match rep {
             ProtocolMsg::LocateTopicRep(rep) => Ok(Arc::new(rep.endpoint)),
             err => {
-              Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
+              Err(anyhow!(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
             }
           },
           Err(err) => {
-            Err(Error::msg(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
+            Err(anyhow!(format!("Failed to locate topic: topic: {:?}, err: {:?}", topic, err)))
           }
         }
       })

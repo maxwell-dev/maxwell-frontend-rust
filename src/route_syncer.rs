@@ -4,7 +4,6 @@ use std::{
 };
 
 use actix::prelude::*;
-use ahash::AHashSet;
 use futures_intrusive::sync::LocalManualResetEvent;
 use maxwell_protocol::{self, *};
 use maxwell_utils::prelude::*;
@@ -88,16 +87,33 @@ impl RouteSyncerInner {
       Ok(rep) => match rep {
         ProtocolMsg::GetRoutesRep(rep) => {
           log::info!("Successfully to get routes: rep: {:?}", rep);
-          let mut paths = AHashSet::with_capacity(rep.route_groups.len());
-          for route in rep.route_groups.iter() {
-            ROUTE_TABLE.set_route_group(
-              route.path.clone(),
-              route.healthy_endpoints.clone(),
-              route.unhealthy_endpoints.clone(),
-            );
-            paths.insert(route.path.clone());
-          }
-          ROUTE_TABLE.remove_if_not_in(paths);
+          ROUTE_TABLE.set_ws_route_groups(rep.ws_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set ws_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_get_route_groups(rep.get_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set get_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_post_route_groups(rep.post_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set post_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_put_route_groups(rep.put_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set put_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_patch_route_groups(rep.patch_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set patch_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_delete_route_groups(rep.delete_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set delete_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_head_route_groups(rep.head_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set head_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_options_route_groups(rep.options_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set options_route_groups: err: {:?}", err);
+          });
+          ROUTE_TABLE.set_trace_route_groups(rep.trace_route_groups).unwrap_or_else(|err| {
+            log::warn!("Failed to set trace_route_groups: err: {:?}", err);
+          });
           true
         }
         _ => {
