@@ -14,13 +14,10 @@ use tokio::task::JoinHandle;
 
 use crate::route_table::ROUTE_TABLE;
 
-static SERVER_NAME: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
-
 static EMPTY_PNQ: Lazy<PathAndQuery> = Lazy::new(|| PathAndQuery::from_static(""));
 
 static REQWEST: Lazy<ReqwestClient> = Lazy::new(|| {
   ReqwestClientBuilder::new()
-    .user_agent(SERVER_NAME)
     .no_proxy()
     .connect_timeout(Duration::from_secs(3))
     .timeout(Duration::from_secs(30))
@@ -83,8 +80,6 @@ impl HttpHandler {
     for header in reqwest_resp.headers() {
       resp_builder.insert_header(header.clone());
     }
-    resp_builder.insert_header(("Access-Control-Allow-Origin", "*"));
-    resp_builder.insert_header(("Server", SERVER_NAME));
     resp_builder.keep_alive();
     resp_builder
   }

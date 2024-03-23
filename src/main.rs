@@ -16,7 +16,7 @@ use actix::prelude::*;
 use actix_cors::Cors;
 use actix_web::{
   error::ErrorInternalServerError,
-  middleware::{Compress, Logger as ActixLogger, NormalizePath, TrailingSlash},
+  middleware::{Compress, DefaultHeaders, Logger as ActixLogger, NormalizePath, TrailingSlash},
   web, App, Error as ActixError, HttpRequest, HttpResponse, HttpServer,
 };
 use actix_web_actors::ws;
@@ -33,6 +33,8 @@ use crate::registrar::Registrar;
 
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+static SERVER_NAME: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
   let resp = ws::WsResponseBuilder::new(WsHandler::new(&req), &req, stream)
@@ -68,12 +70,6 @@ async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Act
 async fn main() -> Result<()> {
   log4rs::init_file("config/log4rs.yaml", Default::default())?;
 
-  use matchit::Router;
-
-  let mut m = Router::new();
-  m.insert("/static/{*p}", true)?;
-  log::info!("{:?}", m.at("/static/"));
-
   Registrar::new().start();
   RouteSyncer::new().start();
   TopicCleaner::new().start();
@@ -95,6 +91,11 @@ async fn create_http_server(is_https: bool) -> Result<()> {
           .block_on_origin_mismatch(false)
           .expose_any_header()
           .max_age(None),
+      )
+      .wrap(
+        DefaultHeaders::new()
+          .add(("Access-Control-Allow-Origin", "*"))
+          .add(("Server", SERVER_NAME)),
       )
       .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
       .route("/$ws", web::get().to(ws))
