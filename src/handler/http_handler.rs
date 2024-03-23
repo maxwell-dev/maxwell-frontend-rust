@@ -80,7 +80,6 @@ impl HttpHandler {
     for header in reqwest_resp.headers() {
       resp_builder.insert_header(header.clone());
     }
-    resp_builder.keep_alive();
     resp_builder
   }
 
