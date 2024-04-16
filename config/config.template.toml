@@ -3,6 +3,7 @@ backlog = 2048
 cert_file = "certificates/localhost.crt"
 http_port = 10000
 https_port = 11443
+id = "frontend-0"
 keep_alive = 5
 key_file = "certificates/localhost.key"
 max_connection_rate = 1024

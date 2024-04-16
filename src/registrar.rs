@@ -31,15 +31,26 @@ impl RegistrarInner {
   }
 
   async fn register(&self) -> bool {
-    let req = RegisterFrontendReq { http_port: CONFIG.server.http_port, r#ref: 0 }.into_enum();
+    let req = RegisterFrontendReq {
+      id: CONFIG.server.id.clone(),
+      http_port: CONFIG.server.http_port,
+      r#ref: 0,
+    }
+    .into_enum();
     log::info!("Registering frontend: req: {:?}", req);
     match MASTER_CLIENT.send(req).await {
-      Ok(rep) => {
-        log::info!("Successfully to register frontend: rep: {:?}", rep);
-        true
-      }
+      Ok(rep) => match rep {
+        ProtocolMsg::RegisterFrontendRep(rep) => {
+          log::info!("Successfully to register frontend: rep: {:?}", rep);
+          true
+        }
+        other => {
+          log::error!("Failed to register frontend: {:?}", other);
+          false
+        }
+      },
       Err(err) => {
-        log::warn!("Failed to register frontend: {:?}", err);
+        log::error!("Failed to register frontend: {:?}", err);
         false
       }
     }
