@@ -2,7 +2,7 @@
 authors = ["Chaoqian Xu <chaoranxu@gmail.com>"]
 edition = "2021"
 name = "maxwell-frontend"
-version = "0.7.0"
+version = "0.7.1"
 
 [dependencies]
 config = "0.14.0"
@@ -36,8 +36,5 @@ serde = "1.0.197"
 serde_derive = "1.0.197"
 tikv-jemallocator = {version = "0.5.4", features = ["profiling"]}
 
-maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.23.0"}
-maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.10.27"}
-
-[profile.release]
-debug = true
+maxwell-protocol = {git = "https://github.com/maxwell-dev/maxwell-protocol-rust.git", tag = "v0.23.1"}
+maxwell-utils = {git = "https://github.com/maxwell-dev/maxwell-utils-rust.git", tag = "v0.10.28"}

@@ -1293,7 +1293,7 @@ checksum = "56e8fcd7bd6025a951597d6ba2f8e48a121af7e262f2b52a006a09c8d61f9304"
 
 [[package]]
 name = "maxwell-frontend"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "actix",
  "actix-cors",
@@ -1329,8 +1329,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-protocol"
-version = "0.23.0"
-source = "git+https://github.com/maxwell-dev/maxwell-protocol-rust.git?tag=v0.23.0#460a6044c04c1ca718064cbf2b33f814bbecf757"
+version = "0.23.1"
+source = "git+https://github.com/maxwell-dev/maxwell-protocol-rust.git?tag=v0.23.1#168219d6a1f20dca9847a460718aceebd9d78d00"
 dependencies = [
  "actix",
  "bytes",
@@ -1340,8 +1340,8 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.10.27"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.27#76c16d67cc20077eb572d68094d0289e6a09e3ba"
+version = "0.10.28"
+source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.10.28#2766b229cbdf292521f175e4dc9c11d2ae59eaca"
 dependencies = [
  "actix",
  "ahash",
