@@ -36,6 +36,10 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 static SERVER_NAME: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
+async fn health(_req: HttpRequest) -> Result<HttpResponse, ActixError> {
+  Ok(HttpResponse::Ok().body(""))
+}
+
 async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, ActixError> {
   let resp = ws::WsResponseBuilder::new(WsHandler::new(&req), &req, stream)
     .frame_size(CONFIG.server.max_frame_size)
@@ -98,6 +102,7 @@ async fn create_http_server(is_https: bool) -> Result<()> {
           .add(("Server", SERVER_NAME)),
       )
       .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
+      .route("/$health", web::get().to(health))
       .route("/$ws", web::get().to(ws))
       .route("/{pnq:.*}", web::get().to(get))
       .route("/{pnq:.*}", web::route().to(other))

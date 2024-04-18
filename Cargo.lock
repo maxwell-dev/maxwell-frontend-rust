@@ -1293,7 +1293,7 @@ checksum = "56e8fcd7bd6025a951597d6ba2f8e48a121af7e262f2b52a006a09c8d61f9304"
 
 [[package]]
 name = "maxwell-frontend"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "actix",
  "actix-cors",
