@@ -245,7 +245,7 @@ impl WsHandlerInner {
                 log::error!("Failed to send: error: {:?}", err);
                 let rep = maxwell_protocol::ErrorRep {
                   code: ErrorCode::FailedToRequestService as i32,
-                  desc: format!("Failed to send: error: {:?}", err),
+                  desc: format!("Failed to send: error: {}", err),
                   r#ref,
                 }
                 .into_enum();
@@ -262,7 +262,7 @@ impl WsHandlerInner {
             log::error!("Failed to get connetion: err: {:?}", err);
             maxwell_protocol::ErrorRep {
               code: ErrorCode::FrontendError as i32,
-              desc: format!("Failed to get connetion: err: {:?}", err),
+              desc: format!("Failed to get connetion: err: {}", err),
               r#ref,
             }
             .into_enum()
@@ -286,7 +286,7 @@ impl WsHandlerInner {
                 log::error!("Failed to send: error: {:?}", err);
                 let rep = maxwell_protocol::ErrorRep {
                   code: ErrorCode::FailedToRequestBackend as i32,
-                  desc: format!("Failed to send: error: {:?}", err),
+                  desc: format!("Failed to send: error: {}", err),
                   r#ref,
                 }
                 .into_enum();
@@ -303,7 +303,7 @@ impl WsHandlerInner {
             log::error!("Failed to localize: err: {:?}", err);
             maxwell_protocol::ErrorRep {
               code: ErrorCode::FrontendError as i32,
-              desc: format!("Failed to localize: err: {:?}", err),
+              desc: format!("Failed to localize: err: {}", err),
               r#ref,
             }
             .into_enum()
