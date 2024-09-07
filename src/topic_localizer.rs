@@ -11,8 +11,8 @@ use crate::{config::CONFIG, master_client::MASTER_CLIENT};
 pub struct EndpointWeighter;
 
 impl Weighter<String, Arc<String>> for EndpointWeighter {
-  fn weight(&self, _key: &String, val: &Arc<String>) -> u32 {
-    val.len() as u32
+  fn weight(&self, _key: &String, val: &Arc<String>) -> u64 {
+    val.len() as u64
   }
 }
 
