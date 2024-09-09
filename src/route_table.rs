@@ -270,7 +270,7 @@ impl RouteTable {
         route_group.healthy_endpoints.clone().into_iter().collect(),
         route_group.unhealthy_endpoints.clone().into_iter().collect(),
       );
-      router.insert(path, endpoint_set).map_err(|err| anyhow!(format!("{}", err)))?;
+      router.insert(path, endpoint_set).map_err(|err| anyhow!(format!("{:?}", err)))?;
     }
     dest.store(Arc::new(router));
     Ok(())

@@ -89,7 +89,7 @@ impl<C: Connection> StickyConnectionMgr<C> {
     self
       .connections
       .try_get_with_by_ref(key, init_connection)
-      .or_else(|err| Err(anyhow!(format!("{}", err))))
+      .or_else(|err| Err(anyhow!(format!("{:?}", err))))
   }
 
   #[inline]
@@ -121,7 +121,7 @@ impl<C: Connection> AsyncStickyConnectionMgr<C> {
       .connections
       .try_get_with_by_ref(key, async { init_connection.await })
       .await
-      .or_else(|err| Err(anyhow!(format!("{}", err))))
+      .or_else(|err| Err(anyhow!(format!("{:?}", err))))
   }
 
   #[inline]

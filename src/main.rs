@@ -46,7 +46,7 @@ async fn ws(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Acti
     .start();
   match &resp {
     Ok(resp) => log::debug!("ws req: {:?}, ws resp: {:?}", req, resp),
-    Err(err) => log::error!("err: {}, ws req: {:?}", err, req),
+    Err(err) => log::error!("err: {:?}, ws req: {:?}", err, req),
   }
   resp
 }
@@ -55,7 +55,7 @@ async fn get(req: HttpRequest) -> Result<HttpResponse, ActixError> {
   let resp = HttpHandler::handle_get(&req).await.or_else(|err| Err(ErrorInternalServerError(err)));
   match &resp {
     Ok(resp) => log::debug!("http req: {:?}, http resp: {:?}", req, resp),
-    Err(err) => log::error!("err: {}, http req: {:?}", err, req),
+    Err(err) => log::error!("err: {:?}, http req: {:?}", err, req),
   }
   resp
 }
@@ -65,7 +65,7 @@ async fn other(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Act
     HttpHandler::handle_request(&req, body).await.or_else(|err| Err(ErrorInternalServerError(err)));
   match &resp {
     Ok(resp) => log::debug!("http req: {:?}, resp: {:?}", req, resp),
-    Err(err) => log::error!("err: {}, http req: {:?}", err, req),
+    Err(err) => log::error!("err: {:?}, http req: {:?}", err, req),
   }
   resp
 }
