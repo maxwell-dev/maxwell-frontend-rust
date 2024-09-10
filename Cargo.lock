@@ -1437,7 +1437,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "maxwell-frontend"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "actix",
  "actix-cors",
@@ -1473,8 +1473,9 @@ dependencies = [
 
 [[package]]
 name = "maxwell-protocol"
-version = "0.24.1"
-source = "git+https://github.com/maxwell-dev/maxwell-protocol-rust.git?tag=v0.24.1#3b1ccfadef6608168e0216239826b39ec1969de3"
+version = "0.24.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af8145332bfcad9c052f07b812193eae107cdb531784cc7285c396e060ed0c5e"
 dependencies = [
  "actix",
  "bytes",
@@ -1484,8 +1485,9 @@ dependencies = [
 
 [[package]]
 name = "maxwell-utils"
-version = "0.11.0"
-source = "git+https://github.com/maxwell-dev/maxwell-utils-rust.git?tag=v0.11.0#128b8ac7f7acb12ccd2874bc40a05c7aa2c3faa8"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a03e4827c44466bb8718280360818086317dc7194832be19097f1b1890cde0ed"
 dependencies = [
  "actix",
  "ahash",
