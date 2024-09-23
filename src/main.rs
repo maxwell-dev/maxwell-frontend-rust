@@ -24,7 +24,7 @@ use anyhow::{anyhow, Result};
 use futures::future;
 use route_syncer::RouteSyncer;
 use rustls::{pki_types::PrivateKeyDer, ServerConfig};
-use rustls_pemfile::{certs, pkcs8_private_keys};
+use rustls_pemfile::{certs, ec_private_keys};
 use topic_cleaner::TopicCleaner;
 
 use crate::config::CONFIG;
@@ -134,11 +134,11 @@ fn create_tls_config() -> Result<ServerConfig> {
   let key_buf = &mut BufReader::new(key_file);
 
   let cert_chain = certs(cert_buf).collect::<Result<Vec<_>, _>>()?;
-  let mut keys = pkcs8_private_keys(key_buf).collect::<Result<Vec<_>, _>>().unwrap();
+  let mut keys = ec_private_keys(key_buf).collect::<Result<Vec<_>, _>>().unwrap();
 
   Ok(
     ServerConfig::builder()
       .with_no_client_auth()
-      .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(keys.remove(0)))?,
+      .with_single_cert(cert_chain, PrivateKeyDer::Sec1(keys.remove(0)))?,
   )
 }
