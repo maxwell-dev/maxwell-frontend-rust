@@ -86,7 +86,7 @@ impl RouteSyncerInner {
     match MASTER_CLIENT.send(req).await {
       Ok(rep) => match rep {
         ProtocolMsg::GetRoutesRep(rep) => {
-          log::info!("Successfully to get routes: rep: {:?}", rep);
+          log::debug!("Successfully to get routes: rep: {:?}", rep);
           ROUTE_TABLE.set_ws_route_groups(rep.ws_route_groups).unwrap_or_else(|err| {
             log::warn!("Failed to set ws_route_groups: err: {:?}", err);
           });
